@@ -1,0 +1,20 @@
+{
+  "name": "ken-clawdbot-whatsapp",
+  "version": "1.0.0",
+  "description": "Ken — WhatsApp bridge for ClawdBot",
+  "main": "channels/whatsapp/bot.js",
+  "scripts": {
+    "whatsapp": "node channels/whatsapp/bot.js",
+    "whatsapp:dev": "node --watch channels/whatsapp/bot.js"
+  },
+  "dependencies": {
+    "whatsapp-web.js": "^1.26.0",
+    "qrcode-terminal": "^0.12.0",
+    "axios": "^1.6.8",
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

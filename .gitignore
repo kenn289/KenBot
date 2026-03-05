@@ -1,0 +1,74 @@
+# ─── Secrets ──────────────────────────────────────────────
+.env
+*.env
+secrets/
+token.json
+youtube_token.json
+*.key
+credentials.json
+credentials/*.json
+*.bak
+
+# ─── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+wheels/
+.installed.cfg
+*.so
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# ─── Node ─────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+.node_repl_history
+
+# ─── WhatsApp session ─────────────────────────────────────
+.wwebjs_auth/
+.wwebjs_cache/
+
+# ─── Logs ─────────────────────────────────────────────────
+logs/
+*.log
+
+# ─── DB / Memory ──────────────────────────────────────────
+memory/*.db
+memory/*.sqlite
+memory/sessions/
+
+# ─── Media / temp ─────────────────────────────────────────
+media/temp/
+media/outbound/
+*.mp4
+*.mp3
+*.wav
+*.png
+*.jpg
+!soul/assets/
+!docs/
+
+# ─── IDE ──────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
