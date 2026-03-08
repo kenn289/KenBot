@@ -168,6 +168,7 @@ class YouTubeUploader:
             memory.mark_posted(h, "youtube", title, video_id)
             self._increment_upload()
             logger.info(f"✅ YouTube upload complete: https://youtu.be/{video_id}")
+            memory.queue_notification(f"📺 youtube short live: https://youtu.be/{video_id}\n{title}")
             return video_id
 
         except HttpError as exc:
@@ -186,11 +187,21 @@ class YouTubeUploader:
             logger.warning("No video file in package. Script-only mode, skipping upload.")
             return None
 
+        # Ensure YouTube identifies this as a Short
+        desc = package.get("description", "")
+        if "#Shorts" not in desc:
+            desc = desc + "\n\n#Shorts #Viral"
+
+        tags = package.get("tags", [])
+        if "Shorts" not in tags:
+            tags = ["Shorts"] + tags
+
         return self.upload_video(
             video_path=package["video_path"],
             title=package["title"],
-            description=package["description"],
-            tags=package.get("tags", []),
+            description=desc,
+            tags=tags,
+            category_id="20",  # Gaming
         )
 
 

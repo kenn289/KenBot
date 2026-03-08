@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     twitter_access_token: str = Field("", env="TWITTER_ACCESS_TOKEN")
     twitter_access_token_secret: str = Field("", env="TWITTER_ACCESS_TOKEN_SECRET")
     twitter_bearer_token: str = Field("", env="TWITTER_BEARER_TOKEN")
+    # Browser automation credentials
+    twitter_username: str = Field("", env="TWITTER_USERNAME")
+    twitter_password: str = Field("", env="TWITTER_PASSWORD")
+    twitter_email: str = Field("", env="TWITTER_EMAIL")
+
+    # ── News ──────────────────────────────────────
+    news_api_key: str = Field("", env="NEWS_API_KEY")  # optional: newsapi.org free tier
+    tavily_api_key: str = Field("", env="TAVILY_API_KEY")  # real-time web search
 
     # ── Google ─────────────────────────────────────
     google_places_api_key: str = Field("", env="GOOGLE_PLACES_API_KEY")

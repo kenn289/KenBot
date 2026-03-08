@@ -7,6 +7,9 @@ youtube_token.json
 *.key
 credentials.json
 credentials/*.json
+credentials/*.pickle
+credentials/*.p12
+credentials/*.pem
 *.bak
 
 # ─── Python ───────────────────────────────────────────────
@@ -44,6 +47,8 @@ yarn-error.log*
 # ─── WhatsApp session ─────────────────────────────────────
 .wwebjs_auth/
 .wwebjs_cache/
+channels/whatsapp/.wwebjs_auth/
+channels/whatsapp/.wwebjs_cache/
 
 # ─── Logs ─────────────────────────────────────────────────
 logs/
@@ -57,6 +62,7 @@ memory/sessions/
 # ─── Media / temp ─────────────────────────────────────────
 media/temp/
 media/outbound/
+output/
 *.mp4
 *.mp3
 *.wav
@@ -65,6 +71,10 @@ media/outbound/
 !soul/assets/
 !docs/
 
+# ─── Generated DB caches ──────────────────────────────────
+memory/response_cache.db
+memory/ken_memory.db
+
 # ─── IDE ──────────────────────────────────────────────────
 .vscode/settings.json
 .idea/
@@ -72,3 +82,8 @@ media/outbound/
 *.swo
 .DS_Store
 Thumbs.db
+# ─── Temp / scratch scripts ───────────────────────────
+_test_*.py
+_tw_*.py
+_verify_*.py
+scratch*.py

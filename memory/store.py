@@ -146,6 +146,45 @@ class MemoryStore:
         row = self._db.execute("SELECT value FROM kv_store WHERE key=?", (key,)).fetchone()
         return row["value"] if row else default
 
+    # --- Contact type (friend / family / adult / colleague / unknown) ---
+    def set_contact_type(self, contact_id: str, contact_type: str) -> None:
+        self.set(f"contact_type:{contact_id}", contact_type.strip().lower())
+
+    def get_contact_type(self, contact_id: str) -> str:
+        return self.get(f"contact_type:{contact_id}", "unknown")
+
+    # --- Fun facts (per-chat, never cross-contaminate) ---
+    def store_fun_fact(self, chat_id: str, speaker: str, fact: str) -> None:
+        import json
+        key = f"fun_facts:{chat_id}"
+        existing = json.loads(self.get(key, "[]"))
+        existing.append({"speaker": speaker, "fact": fact})
+        existing = existing[-20:]  # keep last 20 per chat
+        self.set(key, json.dumps(existing))
+
+    def get_fun_facts(self, chat_id: str) -> list:
+        import json
+        return json.loads(self.get(f"fun_facts:{chat_id}", "[]"))
+
+    # --- Notification queue ---
+    def queue_notification(self, message: str) -> None:
+        """Queue a message to be sent to Kenneth via WhatsApp."""
+        import threading
+        if not hasattr(self, "_notif_lock"):
+            self._notif_lock = threading.Lock()
+            self._notif_queue: list = []
+        with self._notif_lock:
+            self._notif_queue.append(message)
+
+    def pop_notifications(self) -> list:
+        """Return and clear all pending notifications."""
+        if not hasattr(self, "_notif_queue"):
+            return []
+        with self._notif_lock:
+            msgs = list(self._notif_queue)
+            self._notif_queue.clear()
+        return msgs
+
 
 # Singleton
 memory = MemoryStore()
