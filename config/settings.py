@@ -36,7 +36,8 @@ class Settings(BaseSettings):
     # Browser automation credentials
     twitter_username: str = Field("", env="TWITTER_USERNAME")
     twitter_password: str = Field("", env="TWITTER_PASSWORD")
-    twitter_email: str = Field("", env="TWITTER_EMAIL")
+    twitter_email: str = Field("", env="TWITTER_EMAIL")      # email for X login verification step
+    twitter_phone: str = Field("", env="TWITTER_PHONE")      # phone (e.g. 919XXXXXXXXX) if X asks for phone
 
     # ── News ──────────────────────────────────────
     news_api_key: str = Field("", env="NEWS_API_KEY")  # optional: newsapi.org free tier
