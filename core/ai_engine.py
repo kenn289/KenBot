@@ -572,8 +572,10 @@ GROUP MODE: {persona_section}
             "Rules:\n"
             "- Under 260 characters\n"
             "- Sound like something you'd actually post at 2am not something a social media manager wrote\n"
-            "- 0-2 hashtags MAX, only if they're actually used by real people for this topic\n"
-            "- No quotation marks. Just output the tweet text."
+            "- 1-2 hashtags that real people actually use for this topic (e.g. #Valorant #VCT #Cricket #F1 #AI #Coding)\n"
+            "- No quotation marks. Just output the tweet text.\n"
+            "- NEVER mention real personal details: no full name, location, employer, school, relationships\n"
+            "- Keep it public-safe — opinions/takes/fan content only"
         )
         raw = self._call(system, prompt, model=MODEL_HAIKU, max_tokens=300, use_cache=False)
         from utils.helpers import truncate
@@ -874,7 +876,10 @@ GROUP MODE: {persona_section}
             f"{IDENTITY}\n\n"
             "You make viral YouTube Shorts — shitpost style, hot takes, meme energy. "
             "Think: loud, punchy, scroll-stopping. 15-45 seconds total. "
-            "Each slide is ONE punchy line that fills the screen. No fluff."
+            "Each slide is ONE punchy line that fills the screen. No fluff. "
+            "Topics rotate across: gaming (Valorant/TenZ), cricket (Kohli/RCB), F1 (Max/Carlos), "
+            "AI/tech takes, dev/coding memes, pop culture, desi/Indian life, crack jokes, "
+            "trending internet drama, hot takes on anything."
         )
         prompt = (
             f"Topic: {topic}\n\n"
@@ -885,8 +890,9 @@ GROUP MODE: {persona_section}
             '"vibe": "hype|dark|funny|unhinged|facts"}\n\n'
             "Rules:\n"
             "- Each slide: max 7 words, ALL CAPS for emphasis words\n"
-            "- hook must be insane/controversial/shocking\n"
-            "- Valorant/football/gaming/pop culture topics do well\n"
+            "- hook must be insane/controversial/shocking/hilarious\n"
+            "- Tech/AI/meme/dev topics: lean into humor and relatability\n"
+            "- Gaming/sports: hype + stan energy\n"
             "- vibe controls the visual style\n"
             "- 4-6 slides total (no more)\n"
             "- sound like a bored bangalore bro who knows too much"
@@ -1009,14 +1015,31 @@ GROUP MODE: {persona_section}
         prompt = (
             f"Given these content pillars:\n{pillars_str}\n\n"
             "Pick ONE topic/angle that would perform well on Twitter and YouTube TODAY.\n"
-            "Consider: what's trending in gaming/esports/dc/marvel/football.\n"
+            "Rotate across ALL pillars — don't always pick gaming. Consider:\n"
+            "  - Valorant scene (ROTATE players, not only TenZ): fns IGL breakdowns, boaster/Karmine hype,\n"
+            "    tarik streaming moments, shanks/yay/nAts/aspas/Derke/Demon1 highlights,\n"
+            "    Sentinels (TenZ/Zekken/Sacy/pANcada), VCT Americas/EMEA/Pacific results, agent meta/patch takes\n"
+            "  - AI/tech (AI drama, new model releases, vibe coding, cursor, layoffs)\n"
+            "  - Cricket/F1 (Kohli, RCB, Max Verstappen, Carlos Sainz, race results, IPL)\n"
+            "  - Memes/internet culture (viral formats, Twitter drama, trending topics)\n"
+            "  - Dev/coding life (programmer memes, leetcode, software engineer relatable)\n"
+            "  - Pop culture (Netflix, Bollywood, Marvel, DC, movies, music)\n"
+            "  - Indian/desi life (startup culture, Bangalore, food delivery, traffic jokes)\n"
+            "  - Hot takes / crack jokes (shower thoughts, absurd takes, anything funny)\n"
             "Return ONLY JSON: {\"topic\": \"...\", \"angle\": \"...\", \"platform\": \"both|twitter|youtube\"}"
         )
         raw = self._call(system, prompt, model=MODEL_HAIKU, max_tokens=200, use_cache=False)
         try:
             return json.loads(raw)
         except Exception:
-            return {"topic": "Valorant", "angle": "TenZ best plays", "platform": "both"}
+            fallbacks = [
+                {"topic": "fns Valorant", "angle": "best IGL callouts in VCT", "platform": "both"},
+                {"topic": "boaster VCT", "angle": "Karmine Corp hype energy", "platform": "twitter"},
+                {"topic": "TenZ Sentinels", "angle": "clutch highlight of the week", "platform": "both"},
+                {"topic": "aspas LOUD", "angle": "most insane stat line this split", "platform": "twitter"},
+            ]
+            import random as _r
+            return _r.choice(fallbacks)
 
 
     # ── Community game helpers ─────────────────────────────────────────

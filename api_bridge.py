@@ -14,6 +14,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from channels.twitter.poster import twitter
+from channels.twitter.x_engagement import x_engagement
 from channels.youtube.content_gen import yt_content
 from channels.youtube.uploader import yt_uploader
 from content.scheduler import scheduler
@@ -297,6 +298,34 @@ def post_thread():
     num = int(data.get("num_tweets", 5))
     ids = twitter.post_content_thread(topic or None, num_tweets=num)
     return jsonify({"ok": bool(ids), "tweet_ids": ids}), 200
+
+
+@app.route("/api/twitter/engage", methods=["POST"])
+def run_engagement():
+    """Scrape feed → like + reply on Valorant/Kohli/F1 posts."""
+    data    = request.get_json(force=True) or {}
+    topics  = data.get("topics")  # optional list override
+    def _bg():
+        x_engagement.run_engagement(topics or None)
+    threading.Thread(target=_bg, daemon=True).start()
+    return jsonify({"ok": True, "msg": "engagement run started"}), 200
+
+
+@app.route("/api/twitter/shitpost", methods=["POST"])
+def post_shitpost():
+    """Generate + post a gen-z shitpost about Ken's interests."""
+    data  = request.get_json(force=True) or {}
+    topic = data.get("topic")  # optional specific topic
+    result = x_engagement.post_shitpost(topic or None)
+    return jsonify({"ok": bool(result), "result": result}), 200
+
+
+@app.route("/api/twitter/shitpost/preview", methods=["GET"])
+def preview_shitpost():
+    """Preview a shitpost without posting."""
+    topic = request.args.get("topic")
+    tweet = x_engagement.generate_shitpost(topic or None)
+    return jsonify({"tweet": tweet}), 200
 
 
 # ════════════════════════════════════════════════════════

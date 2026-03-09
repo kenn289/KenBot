@@ -19,7 +19,7 @@ from utils.helpers import fingerprint, truncate, clean_for_tweet
 from utils.logger import logger
 
 SESSION_PATH = Path(settings.root_dir) / "credentials" / "twitter_session.json"
-MAX_TWEETS_PER_DAY = 8
+MAX_TWEETS_PER_DAY = 50  # 2/hour across ~15 active hours
 
 
 class TwitterPoster:
@@ -146,13 +146,24 @@ class TwitterPoster:
 
             def _ensure_logged_in() -> bool:
                 page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=30000)
-                try:
-                    page.locator('[data-testid="SideNav_NewTweet_Button"]').first.wait_for(
-                        state="visible", timeout=7000
-                    )
-                    return True
-                except Exception:
-                    pass
+                time.sleep(2)
+                page.screenshot(path=str(debug_dir / "home_check.png"))
+                # Check for any of the known post/compose buttons that appear when logged in
+                for sel in [
+                    '[data-testid="SideNav_NewTweet_Button"]',
+                    '[data-testid="tweetButtonInline"]',
+                    '[aria-label="Post"]',
+                    '[data-testid="tweetButton"]',
+                    'a[href="/compose/tweet"]',
+                ]:
+                    try:
+                        page.locator(sel).first.wait_for(state="visible", timeout=4000)
+                        logger.info(f"Logged in — detected: {sel}")
+                        return True
+                    except Exception:
+                        continue
+                # Not logged in — try login (but don't delete valid session file yet)
+                logger.warning("Session check failed — attempting login")
                 SESSION_PATH.unlink(missing_ok=True)
                 if not self._login(page):
                     return False
@@ -207,6 +218,15 @@ class TwitterPoster:
                         continue
 
                 if post_btn is None:
+                    # Final fallback: xpath text match for "Post" button
+                    try:
+                        el = page.locator('xpath=//button[@role="button" and .//span[text()="Post"]]').first
+                        el.wait_for(state="visible", timeout=5000)
+                        post_btn = el
+                    except Exception:
+                        pass
+
+                if post_btn is None:
                     page.screenshot(path=str(debug_dir / "tweet_button_fail.png"))
                     logger.error("Post button not found — screenshot: logs/tweet_button_fail.png")
                     browser.close()
@@ -228,49 +248,82 @@ class TwitterPoster:
                 return None
 
     def _login(self, page) -> bool:
-        """Log in to X via the browser login flow."""
+        """Log in to X via the browser login flow using dynamic XPaths."""
+        debug_dir = Path(settings.root_dir) / "logs"
+        debug_dir.mkdir(parents=True, exist_ok=True)
         try:
             from playwright.sync_api import TimeoutError as PWTimeout
             page.goto("https://x.com/i/flow/login", wait_until="domcontentloaded", timeout=30000)
-            time.sleep(2)
+            time.sleep(3)
+            page.screenshot(path=str(debug_dir / "login_step1_username.png"))
 
-            # Step 1: Username
-            page.locator('input[autocomplete="username"]').first.wait_for(state="visible", timeout=15000)
-            page.locator('input[autocomplete="username"]').first.fill(settings.twitter_username)
-            time.sleep(0.5)
-            page.keyboard.press("Enter")
-            time.sleep(2)
+            # Step 1: Username — xpath from live HTML (name="text")
+            username = page.locator('xpath=//input[@name="text"]').first
+            username.wait_for(state="visible", timeout=10000)
+            username.click()
+            username.fill(settings.twitter_username)
+            time.sleep(0.6)
 
-            # Step 2: Optional phone/email/phone verification step
+            # Click "Next" button via xpath text match
+            next_btn = page.locator('xpath=//button[@role="button" and .//span[text()="Next"]]').first
+            next_btn.wait_for(state="visible", timeout=8000)
+            next_btn.click()
+            time.sleep(2.5)
+            page.screenshot(path=str(debug_dir / "login_step2_after_username.png"))
+
+            # Step 2: Optional verification step (unusual_activity check)
             try:
-                verify = page.locator('input[data-testid="ocfEnterTextTextInput"]').first
+                verify = page.locator('xpath=//input[@data-testid="ocfEnterTextTextInput"]').first
                 verify.wait_for(state="visible", timeout=5000)
-                # Use email first, then phone, then username as last resort
                 verify_value = settings.twitter_email or settings.twitter_phone or settings.twitter_username
                 if not (settings.twitter_email or settings.twitter_phone):
                     logger.warning(
                         "X verification step appeared but TWITTER_EMAIL and TWITTER_PHONE are not set "
-                        "in .env \u2014 add one of them so bot can pass the verification step"
+                        "in .env — add one of them so bot can pass the verification step"
                     )
                 verify.fill(verify_value)
-                page.keyboard.press("Enter")
+                next_btn2 = page.locator('xpath=//button[@role="button" and .//span[text()="Next"]]').first
+                next_btn2.wait_for(state="visible", timeout=5000)
+                next_btn2.click()
                 time.sleep(2)
             except PWTimeout:
-                pass  # No verification step — proceed directly to password
+                pass  # No verification step
 
-            # Step 3: Password
-            page.locator('input[name="password"]').first.wait_for(state="visible", timeout=15000)
-            page.locator('input[name="password"]').first.fill(settings.twitter_password)
-            time.sleep(0.5)
-            page.keyboard.press("Enter")
-            time.sleep(4)
+            page.screenshot(path=str(debug_dir / "login_step3_password.png"))
+
+            # Step 3: Password — xpath from live HTML (name="password", autocomplete="current-password")
+            password = page.locator('xpath=//input[@name="password" and @autocomplete="current-password"]').first
+            password.wait_for(state="visible", timeout=12000)
+            password.click()
+            password.fill(settings.twitter_password)
+            time.sleep(0.6)
+
+            # Click "Log in" button — try data-testid first, fall back to xpath text
+            try:
+                login_btn = page.locator('xpath=//button[@data-testid="LoginForm_Login_Button"]').first
+                login_btn.wait_for(state="visible", timeout=5000)
+                login_btn.click()
+            except Exception:
+                try:
+                    login_btn = page.locator('xpath=//button[@role="button" and .//span[text()="Log in"]]').first
+                    login_btn.wait_for(state="visible", timeout=5000)
+                    login_btn.click()
+                except Exception:
+                    page.keyboard.press("Enter")
+
+            time.sleep(5)
+            page.screenshot(path=str(debug_dir / "login_step4_result.png"))
 
             if "home" in page.url:
                 logger.info("Twitter browser login successful")
                 return True
-            logger.error(f"Browser login failed — URL after login: {page.url}")
+            logger.error(f"Browser login failed — URL: {page.url} — check logs/login_step4_result.png")
             return False
         except Exception as e:
+            try:
+                page.screenshot(path=str(debug_dir / "login_exception.png"))
+            except Exception:
+                pass
             logger.error(f"Browser login failed: {e}")
             return False
 

@@ -2,12 +2,13 @@
 KenBot OS — Content Scheduler
 APScheduler-based cron jobs for X and YouTube.
 Schedule:
-  - 8 tweets/day at 8:00, 9:30, 12:00, 14:00, 15:30, 19:00, 21:00, 22:30 IST
-  - 2 YT Shorts/day at 10:00 and 16:00 IST
-  - Weekly thread Saturday 11am IST
-  - Daily briefing to Kenneth at 8:30am IST
-  - Influencer reply sniper at 10:00, 15:00, 20:00 IST
-  - Daily idea generation at 7:00am IST
+  - 3 tweets/hour, 7am–11pm IST → 51 tweets/day
+    :00 = hype/hot take  :20 = content/topic  :40 = crack joke/meme
+  - Engagement (like + comment For You feed) every 30 min, 8am–11pm IST
+  - Reply sniper every 2 hours, 9am–9pm IST
+  - Threads 3x/week: Mon 8pm, Wed 8pm, Sat 11am IST
+  - 4 YT Shorts/day at 10am, 1pm, 5pm, 8pm IST
+  - Daily ideas 7am IST, Daily briefing 8:30am IST
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ from apscheduler.triggers.cron import CronTrigger
 import pytz
 
 from channels.twitter.poster import twitter
+from channels.twitter.x_engagement import x_engagement
 from channels.youtube.content_gen import yt_content
 from channels.youtube.uploader import yt_uploader
 from config.settings import settings
@@ -43,40 +45,81 @@ class ContentScheduler:
         self.start()
 
     def _register_jobs(self) -> None:
-        # ── Twitter: 8 tweets/day ──────────────────────────────────────────
-        for job_id, job_name, hour, minute in [
-            ("tweet_0800", "Tweet 8:00am",    8,  0),
-            ("tweet_0930", "Tweet 9:30am",    9, 30),
-            ("tweet_1200", "Tweet 12:00pm",  12,  0),
-            ("tweet_1400", "Tweet 2:00pm",   14,  0),
-            ("tweet_1530", "Tweet 3:30pm",   15, 30),
-            ("tweet_1900", "Tweet 7:00pm",   19,  0),
-            ("tweet_2100", "Tweet 9:00pm",   21,  0),
-            ("tweet_2230", "Tweet 10:30pm",  22, 30),
-        ]:
+        # ── 3 tweets per hour, 7am–11pm IST ───────────────────────────────
+        # :00 = hype/hot take tweet     :20 = content/topic tweet
+        # :40 = crack joke / meme tweet
+        active_hours = list(range(7, 24))  # 7am to 11pm IST (17 hours = 51 tweets/day)
+        for hour in active_hours:
+            self.scheduler.add_job(
+                func=self._post_shitpost,
+                trigger=CronTrigger(hour=hour, minute=0, timezone=TZ),
+                id=f"shitpost_{hour:02d}00",
+                name=f"HypeTweet {hour}:00",
+                replace_existing=True,
+                misfire_grace_time=300,
+            )
             self.scheduler.add_job(
                 func=self._post_tweet,
-                trigger=CronTrigger(hour=hour, minute=minute, timezone=TZ),
+                trigger=CronTrigger(hour=hour, minute=20, timezone=TZ),
+                id=f"tweet_{hour:02d}20",
+                name=f"ContentTweet {hour}:20",
+                replace_existing=True,
+                misfire_grace_time=300,
+            )
+            self.scheduler.add_job(
+                func=self._post_shitpost,
+                trigger=CronTrigger(hour=hour, minute=40, timezone=TZ),
+                id=f"joke_{hour:02d}40",
+                name=f"JokeTweet {hour}:40",
+                replace_existing=True,
+                misfire_grace_time=300,
+            )
+
+        # ── Engagement every 30 min, 8am–11pm IST ────────────────────────
+        # :10 and :40 — like + comment on For You feed
+        for hour in range(8, 24):
+            for minute in [10, 40]:
+                self.scheduler.add_job(
+                    func=self._run_engagement,
+                    trigger=CronTrigger(hour=hour, minute=minute, timezone=TZ),
+                    id=f"engage_{hour:02d}{minute:02d}",
+                    name=f"Engage {hour}:{minute:02d}",
+                    replace_existing=True,
+                    misfire_grace_time=300,
+                )
+
+        # ── Threads 3x/week — Mon 8pm, Wed 8pm, Sat 11am IST ─────────────
+        for job_id, dow, hour, minute in [
+            ("thread_mon", "mon", 20, 0),
+            ("thread_wed", "wed", 20, 0),
+            ("thread_sat", "sat", 11, 0),
+        ]:
+            self.scheduler.add_job(
+                func=self._post_weekly_thread,
+                trigger=CronTrigger(day_of_week=dow, hour=hour, minute=minute, timezone=TZ),
                 id=job_id,
-                name=job_name,
+                name=f"Thread {dow} {hour}:00",
+                replace_existing=True,
+                misfire_grace_time=1800,
+            )
+
+        # ── Reply sniper every 2 hours, 9am–9pm IST ──────────────────────
+        for hour in range(9, 22, 2):
+            self.scheduler.add_job(
+                func=self._run_reply_sniper,
+                trigger=CronTrigger(hour=hour, minute=5, timezone=TZ),
+                id=f"reply_sniper_{hour:02d}",
+                name=f"ReplySniper {hour}:05",
                 replace_existing=True,
                 misfire_grace_time=600,
             )
 
-        # Weekly thread — Saturday 11:00 AM IST
-        self.scheduler.add_job(
-            func=self._post_weekly_thread,
-            trigger=CronTrigger(day_of_week="sat", hour=11, minute=0, timezone=TZ),
-            id="weekly_thread",
-            name="Weekend Thread",
-            replace_existing=True,
-            misfire_grace_time=1800,
-        )
-
-        # ── YouTube: 2 drafts/day ────────────────────────────────────────
+        # ── YouTube: 4 drafts/day ───────────────────────────────────────────
         for job_id, job_name, hour in [
-            ("yt_draft_am", "YouTube Draft AM", 10),
-            ("yt_draft_pm", "YouTube Draft PM", 16),
+            ("yt_draft_morning",   "YouTube Draft Morning",   10),
+            ("yt_draft_afternoon", "YouTube Draft Afternoon", 13),
+            ("yt_draft_evening",   "YouTube Draft Evening",   17),
+            ("yt_draft_night",     "YouTube Draft Night",     20),
         ]:
             self.scheduler.add_job(
                 func=self._generate_yt_draft,
@@ -84,7 +127,7 @@ class ContentScheduler:
                 id=job_id,
                 name=job_name,
                 replace_existing=True,
-                misfire_grace_time=1800,
+                misfire_grace_time=7200,  # 2-hour window — catch up if bot starts late
             )
 
         # Daily idea generation -- 7:00 AM IST
@@ -107,21 +150,6 @@ class ContentScheduler:
             misfire_grace_time=3600,
         )
 
-        # Influencer reply sniper -- 10am, 3pm, 8pm IST
-        for job_id, job_name, hour in [
-            ("reply_sniper_10", "Reply Sniper 10am", 10),
-            ("reply_sniper_15", "Reply Sniper 3pm",  15),
-            ("reply_sniper_20", "Reply Sniper 8pm",  20),
-        ]:
-            self.scheduler.add_job(
-                func=self._run_reply_sniper,
-                trigger=CronTrigger(hour=hour, minute=0, timezone=TZ),
-                id=job_id,
-                name=job_name,
-                replace_existing=True,
-                misfire_grace_time=600,
-            )
-
         # ── Scheduler health ping: every 30 min ─────────────────────────────────────
         self.scheduler.add_job(
             func=lambda: health_monitor.ping("scheduler"),
@@ -138,6 +166,24 @@ class ContentScheduler:
             self.scheduler.start()
             health_monitor.ping("scheduler")
             logger.info("📅 Content scheduler started")
+            # If no YT upload has happened today yet, fire one now (30-sec delay
+            # so the scheduler is fully ready before the job runs).
+            try:
+                uploads_today = yt_uploader._uploads_today()
+                if uploads_today == 0:
+                    from apscheduler.triggers.date import DateTrigger
+                    import datetime as _dt
+                    run_at = _dt.datetime.now(tz=TZ) + _dt.timedelta(seconds=30)
+                    self.scheduler.add_job(
+                        func=self._generate_yt_draft,
+                        trigger=DateTrigger(run_date=run_at, timezone=TZ),
+                        id="yt_startup",
+                        name="YT Startup Upload",
+                        replace_existing=True,
+                    )
+                    logger.info("YT startup job queued (no uploads yet today)")
+            except Exception as exc:
+                logger.debug(f"YT startup check failed: {exc}")
 
     def stop(self) -> None:
         if self.scheduler.running:
@@ -231,6 +277,23 @@ class ContentScheduler:
                 break  # one reply per sniper cycle to avoid spam
         except Exception as exc:
             logger.error(f"Reply sniper failed: {exc}")
+
+    def _run_engagement(self) -> None:
+        logger.info("⏰ Feed engagement running (like + reply)…")
+        try:
+            result = x_engagement.run_engagement()
+            logger.info(f"Engagement done — liked: {result.get('liked',0)}, replied: {result.get('replied',0)}")
+        except Exception as exc:
+            logger.error(f"Engagement job failed: {exc}")
+
+    def _post_shitpost(self) -> None:
+        logger.info("⏰ Shitpost job running…")
+        try:
+            result = x_engagement.post_shitpost()
+            if result:
+                logger.info(f"Shitpost posted: {result}")
+        except Exception as exc:
+            logger.error(f"Shitpost job failed: {exc}")
 
     # ── Manual triggers ──────────────────────────────────
     def trigger_now(self, job_id: str) -> bool:

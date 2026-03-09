@@ -167,8 +167,20 @@ class YouTubeUploader:
             video_id = response.get("id")
             memory.mark_posted(h, "youtube", title, video_id)
             self._increment_upload()
-            logger.info(f"✅ YouTube upload complete: https://youtu.be/{video_id}")
-            memory.queue_notification(f"📺 youtube short live: https://youtu.be/{video_id}\n{title}")
+            short_url = f"https://www.youtube.com/shorts/{video_id}"
+            logger.info(f"YouTube Short live: {short_url}")
+            # WhatsApp notification — DM'd to Kenneth within ~1 min via notify poller
+            memory.queue_notification(
+                f"📺 new short just dropped!\n{title}\n{short_url}"
+            )
+            # Auto-tweet the short link for cross-platform reach
+            try:
+                from channels.twitter.poster import twitter
+                tweet_text = f"new short just dropped 👇\n{title[:120]}\n{short_url}"
+                twitter.post_tweet(tweet_text)
+                logger.info(f"Short tweeted: {short_url}")
+            except Exception as tw_exc:
+                logger.debug(f"Auto-tweet of short failed: {tw_exc}")
             return video_id
 
         except HttpError as exc:
@@ -196,12 +208,26 @@ class YouTubeUploader:
         if "Shorts" not in tags:
             tags = ["Shorts"] + tags
 
+        # Append topic-specific hashtags derived from tags to the description
+        # (first 6 tags become hashtags — boosts discoverability)
+        tag_hashtags = " ".join(
+            f"#{t.replace(' ', '')}" for t in tags[:6]
+            if t.lower() not in ("shorts", "viral") and len(t) < 30
+        )
+        if tag_hashtags and tag_hashtags not in desc:
+            desc = desc + " " + tag_hashtags
+
+        # #Shorts in the title locks YouTube classification
+        title = package["title"]
+        if "#Shorts" not in title and "#shorts" not in title:
+            title = title + " #Shorts"
+
         return self.upload_video(
             video_path=package["video_path"],
-            title=package["title"],
+            title=title,
             description=desc,
             tags=tags,
-            category_id="20",  # Gaming
+            category_id="22",  # 22 = People & Blogs (better for general/shorts content)
         )
 
 

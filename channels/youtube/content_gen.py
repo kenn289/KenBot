@@ -314,7 +314,7 @@ class YouTubeContentGen:
                 if final_path.exists():
                     final_path.unlink()
                 concat_path.rename(final_path)
-                logger.info("No music tracks in media/music/ — short is silent. Add .mp3 files there.")
+                logger.info("No music tracks in media/music/ — short is silent. Add .mp3/.wav files there.")
                 return final_path
 
         except Exception as exc:
@@ -335,8 +335,12 @@ class YouTubeContentGen:
         ).strip()
 
     def _pick_music(self) -> Optional[Path]:
-        """Pick a random .mp3 from media/music/ if any exist."""
-        tracks = list(MUSIC_DIR.glob("*.mp3")) + list(MUSIC_DIR.glob("*.m4a"))
+        """Pick a random music track from media/music/ — supports .mp3, .m4a, .wav."""
+        tracks = (
+            list(MUSIC_DIR.glob("*.mp3"))
+            + list(MUSIC_DIR.glob("*.m4a"))
+            + list(MUSIC_DIR.glob("*.wav"))
+        )
         if tracks:
             return random.choice(tracks)
         return None
