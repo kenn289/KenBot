@@ -1,7 +1,7 @@
 ﻿# KenBot OS
 
 > A self-operating digital personality platform.
-> Lives on WhatsApp, X (Twitter), and YouTube. Talks like Kenneth, posts like Kenneth, learns from how he actually communicates — and builds his brand autonomously while he's busy doing other things.
+> Lives on WhatsApp, X (Twitter), and YouTube. Talks like Kenneth, posts like Kenneth, learns from how he actually communicates, watches what the algorithm is pushing — and builds his brand autonomously while he's busy doing other things.
 
 ---
 
@@ -9,12 +9,14 @@
 
 KenBot OS is not a chatbot. It's an autonomous digital brain that:
 - **Holds Kenneth's place** on WhatsApp (replies when tagged, gates strangers, logs everything)
-- **Runs his content pipeline** end-to-end (tweets 8x/day, uploads YouTube Shorts, generates threads)
+- **Runs his content pipeline** end-to-end (51 tweets/day, uploads YouTube Shorts 4x/day, generates threads)
 - **Learns his voice** continuously from every message he types
+- **Watches the For You feed** — scrapes what X is pushing, extracts trending topics with AI, and starts tweeting about them automatically
 - **Tracks his social graph** — knows family, inner circle, friends, acquaintances, and adjusts tone accordingly
-- **Scouts trends** from Reddit + niche feeds to surface what to post about
+- **Scouts trends** from 20 subreddits + 40+ keywords to surface what to post about
+- **Covers the full Valorant scene** — TenZ, fns, boaster, tarik, shanks, yay, nAts, aspas, Derke, Demon1 — plus tech/AI, coding, cricket, F1, memes, pop culture, desi life
 - **Generates daily content plans** so Kenneth wakes up knowing exactly what to post
-- **Snipes viral opportunities** by detecting trending tweets from target accounts and generating on-brand replies
+- **Snipes viral opportunities** by detecting trending tweets and generating on-brand replies
 - **Monitors itself** — alerts Kenneth via WhatsApp if any service goes down
 
 ---
@@ -30,16 +32,26 @@ KenBot OS is not a chatbot. It's an autonomous digital brain that:
 | **Style learning** | Watches every message Kenneth types in real groups + DMs. Builds a living voice profile. |
 | **Convo context learning** | Also reads incoming messages to build a picture of his social world. |
 | **Social graph** | Tiers contacts (Inner Circle / Friends / Acquaintances / Family / Public). Tone adapts per tier automatically. |
-| **Twitter / X posting** | 8 tweets/day + 1 weekend thread. Style-aware — pulls from trending topics, content brain, and idea factory. |
-| **YouTube Shorts** | Full pipeline: AI script -> slides -> ffmpeg re-encode -> music layer -> auto-upload with #Shorts. |
-| **Trend scanner** | Scrapes Reddit + contextual seeds. Scores topics for Ken's brand relevance. 30min cache TTL. |
+| **Twitter / X posting** | **51 tweets/day** — 3 per hour, 7am–11pm IST. Hype tweet at :00, content tweet at :20, joke/meme at :40. Style-aware. |
+| **For You feed engagement** | Every 30 min: opens the live For You feed, likes up to 5 mid-tier posts, drops 2 replies on viral posts. No stale search results. |
+| **Feed self-learning** | After every engagement run, AI reads the scraped posts and extracts 5–10 trending topics. 60% of future tweets use feed-learned topics — the bot evolves without manual updates. |
+| **Reply sniper** | Every 2 hours (9am–9pm): finds viral tweets, generates on-brand replies to ride their reach. |
+| **Weekly threads** | 3x/week — Mon 8pm, Wed 8pm, Sat 11am IST. 5-tweet threads on rotating topics. |
+| **Content pillars** | Valorant esports (full VCT scene — not just TenZ), Cricket/Kohli, F1/Max/Carlos, Tech/AI, Coding/dev life, Memes, Pop culture, Indian/desi life, Hot takes/jokes. |
+| **Full Valorant scene** | Covers TenZ, fns (IGL goat), boaster (KC energy), tarik (content god), shanks, yay, nAts, aspas, Derke, Demon1, Zekken, Sacy — plus all major teams. Glorifies, never mocks. |
+| **Hashtag injection** | Tweets get 1-2 relevant hashtags automatically (#Valorant, #VCT, #Cricket, #F1, #AI, #Coding, etc.). |
+| **YouTube Shorts** | Full pipeline: AI slides → styled 1080×1920 PNG frames → ffmpeg with fade transitions → music layer → auto-upload with #Shorts in title + description. **4 Shorts/day** at 10am, 1pm, 5pm, 8pm IST. |
+| **YT startup upload** | If no Short has been uploaded today when the bot starts, one fires automatically within 30 seconds. |
+| **YT cross-posting** | On every upload: tweets the Shorts link, DMs Kenneth on WhatsApp with the `youtube.com/shorts/` URL. |
+| **YT hashtag SEO** | Description automatically gets `#Shorts #Viral` + first 6 tags as clickable hashtags for discovery. |
+| **Background music** | Picks a random `.mp3`, `.m4a`, or `.wav` from `media/music/` and mixes it in at 25% volume with fade-out. |
+| **Trend scanner** | Scrapes 20 subreddits + 40+ keywords. Scores topics for Ken's brand relevance. 30min cache TTL. |
 | **Idea factory** | Generates a fresh daily content plan: 5 tweet ideas, 3 thread starters, 4 video concepts. Cached per day. |
 | **Content brain** | Template-based engine for hot takes, debate starters, poll options, meme ideas, thread hooks. |
 | **Humor engine** | Tracks which humor styles get the best engagement (tech satire, cricket hot take, Bangalore observations, etc.). |
-| **Influencer reply sniper** | Detects viral tweets from target accounts and generates on-brand replies to ride their reach. |
 | **Thread generator** | Full pre-written thread templates for Bangalore / Valorant / AI-and-work topics. |
 | **Meme generator** | Generates drake / two_buttons / expanding_brain meme templates. Optional PIL rendering. |
-| **Reddit miner** | Scrapes 8 subreddits for viral posts and classifies them as tweet / thread / video ideas. |
+| **Reddit miner** | Scrapes 20 subreddits for viral posts and classifies them as tweet / thread / video ideas. |
 | **Podcast clip engine** | Generates podcast-style AI scripts. Optional ElevenLabs TTS voiceover output. |
 | **Repurpose engine** | Converts existing content across platforms: YT -> tweet, YT -> thread, tweet -> reel script. |
 | **Analytics** | Records tweet and YT performance. Tracks top performers. |
@@ -48,7 +60,7 @@ KenBot OS is not a chatbot. It's an autonomous digital brain that:
 | **Knowledge graph** | Lightweight graph linking people, topics, and events for context enrichment. |
 | **Facts store** | Visibility-tagged personal fact store shared by WhatsApp contacts or Kenneth himself. |
 | **Health monitor** | Background heartbeat monitor. Alerts Kenneth via WhatsApp if any service goes down. |
-| **Proactive shitposting** | Drops unprompted posts in real groups every 2h during active hours (10am-11pm IST). |
+| **Proactive shitposting** | Drops unprompted posts in real groups every 2h during active hours (10am–11pm IST). |
 | **Inbox summary** | Every 3h, DMs Kenneth a summary of who messaged + what they said. |
 | **Mood engine** | Mood drifts naturally from context. Manually lockable via command or API. |
 | **News awareness** | Fetches live headlines (BBC, Times of India, Sportstar) hourly. Surfaced naturally in replies. |
@@ -61,37 +73,41 @@ KenBot OS is not a chatbot. It's an autonomous digital brain that:
 ```
 KenBot OS
 +-- channels/
-|   +-- whatsapp/bot.js          WhatsApp bridge (whatsapp-web.js, Node.js)
-|   +-- twitter/poster.py        Twitter posting (Playwright headless Chrome)
+|   +-- whatsapp/bot.js            WhatsApp bridge (whatsapp-web.js, Node.js)
+|   +-- twitter/poster.py          Twitter posting (Playwright headless Chrome)
+|   +-- twitter/x_engagement.py    For You feed scraper → liker → replier → feed learner
+|   +-- youtube/content_gen.py     Shorts pipeline: AI slides → PNG → ffmpeg → music
+|   +-- youtube/uploader.py        YouTube Data API v3 uploader + cross-posting
 +-- core/
-|   +-- ai_engine.py             Claude integration + command dispatcher
-|   +-- social_graph.py          Relationship tier awareness
-|   +-- content_brain.py         Template-based content seeds
-|   +-- humor_engine.py          Humor category performance tracker
-|   +-- health_monitor.py        Service heartbeat monitor
+|   +-- ai_engine.py               Claude integration + command dispatcher
+|   +-- social_graph.py            Relationship tier awareness
+|   +-- content_brain.py           Template-based content seeds
+|   +-- humor_engine.py            Humor category performance tracker
+|   +-- health_monitor.py          Service heartbeat monitor
 +-- memory/
-|   +-- store.py                 SQLite KV store + memory singleton
-|   +-- facts_store.py           Visibility-tagged fact store
-|   +-- knowledge_graph.py       Person/topic/event graph
+|   +-- store.py                   SQLite KV store + memory singleton
+|   +-- facts_store.py             Visibility-tagged fact store
+|   +-- knowledge_graph.py         Person/topic/event graph
 +-- content/
-|   +-- scheduler.py             APScheduler job orchestrator
-|   +-- trend_scanner.py         Reddit + contextual trend aggregation
-|   +-- idea_factory.py          Daily content plan generator
-|   +-- thread_generator.py      Pre-written thread templates
-|   +-- meme_generator.py        Drake/expanding_brain meme engine
-|   +-- reddit_miner.py          Viral idea scraper
-|   +-- podcast_clip_engine.py   AI script + ElevenLabs TTS
-|   +-- repurpose_engine.py      Cross-platform content repurposing
+|   +-- scheduler.py               APScheduler job orchestrator (51 tweets/day + 4 YT/day)
+|   +-- trend_scanner.py           Reddit (20 subs) + 40+ keyword trend aggregation
+|   +-- idea_factory.py            Daily content plan generator
+|   +-- thread_generator.py        Pre-written thread templates
+|   +-- meme_generator.py          Drake/expanding_brain meme engine
+|   +-- reddit_miner.py            Viral idea scraper
+|   +-- podcast_clip_engine.py     AI script + ElevenLabs TTS
+|   +-- repurpose_engine.py        Cross-platform content repurposing
 +-- analytics/
-|   +-- performance.py           Tweet + video metrics tracker
+|   +-- performance.py             Tweet + video metrics tracker
 +-- growth/
-|   +-- influencer_reply_engine.py  Viral reply sniper
-|   +-- engagement_optimizer.py     Strategy recommendations
-|   +-- reddit_engine.py            Reddit presence management
+|   +-- influencer_reply_engine.py Reply sniper
+|   +-- engagement_optimizer.py    Strategy recommendations
+|   +-- reddit_engine.py           Reddit presence management
 +-- config/
-|   +-- ken_personality.py          Voice rules, tone rules, contact tiers
-+-- api_bridge.py                   Flask REST API (port 5050)
-+-- memory/ken_memory.db            SQLite database (auto-created)
+|   +-- ken_personality.py         Voice rules, tone rules, contact tiers, content pillars
++-- api_bridge.py                  Flask REST API (port 5050)
++-- media/music/                   Drop .mp3 / .wav files here for Shorts background music
++-- memory/ken_memory.db           SQLite database (auto-created)
 ```
 
 ---
@@ -268,7 +284,7 @@ The session file is gitignored and auto-refreshed.
    - Save the downloaded file as: `credentials/google_oauth.json`
 6. The first time the bot uploads a video, a browser window will open for consent. After that, the token is auto-saved to `credentials/youtube_token.pickle` and refreshed automatically.
 
-> **Free quota:** YouTube Data API gives 10,000 units/day. Each upload costs ~1,600 units, so you can safely upload ~6 videos/day. The scheduler only does 2/day by default.
+> **Free quota:** YouTube Data API gives 10,000 units/day. Each upload costs ~1,600 units, so you can safely upload ~6 videos/day. The scheduler does 4/day by default. If the bot starts after all daily slots have passed, a startup upload fires within 30 seconds automatically.
 
 ---
 
@@ -366,9 +382,27 @@ Open [config/ken_personality.py](config/ken_personality.py) and update:
 
 ---
 
-### 6. Run
+### 6. Add background music (optional but recommended)
 
-**Terminal 1 -- Flask API:**
+Drop royalty-free audio files into `media/music/`:
+
+```
+media/music/your-track.mp3
+media/music/another-track.wav
+media/music/vibe.m4a
+```
+
+Supported formats: `.mp3`, `.m4a`, `.wav`
+
+The bot picks one at random for each Short, mixes it in at 25% volume with a 2-second fade-out, and trims to match the video length. If the folder is empty, Shorts go out silent.
+
+---
+
+### 7. Run
+
+### 7. Run
+
+**Terminal 1 — Flask API:**
 
 ```powershell
 # Windows (ALWAYS set PYTHONUTF8 first):
@@ -380,7 +414,7 @@ $env:PYTHONUTF8="1"; .venv\Scripts\python.exe api_bridge.py
 PYTHONUTF8=1 python api_bridge.py
 ```
 
-**Terminal 2 -- WhatsApp Bot:**
+**Terminal 2 — WhatsApp Bot:**
 
 ```bash
 cd channels/whatsapp
@@ -388,34 +422,13 @@ node bot.js
 # Scan the QR code with WhatsApp > Linked Devices > Link a Device
 ```
 
-Verify both are running:
-```bash
-curl http://localhost:5050/health
-# Expected: {"bot": "KenBot OS", "status": "ok", ...}
-```
-
-**Terminal 1 -- Flask API:**
+**Terminal 3 — Main Bot (scheduler + X engagement + YT):**
 
 ```powershell
-# Windows (ALWAYS set PYTHONUTF8 first):
-$env:PYTHONUTF8="1"; .venv\Scripts\python.exe api_bridge.py
+.venv\Scripts\python.exe run.py
 ```
 
-```bash
-# macOS/Linux:
-PYTHONUTF8=1 python api_bridge.py
-```
-
-**Terminal 2 -- WhatsApp Bot:**
-
-```bash
-cd channels/whatsapp
-node bot.js
-# Scan the QR code with WhatsApp > Linked Devices > Link a Device
-```
-
-Verify both are running:
-
+Verify all three are running:
 ```bash
 curl http://localhost:5050/health
 # Expected: {"bot": "KenBot OS", "status": "ok", ...}
@@ -533,24 +546,20 @@ All endpoints run on `http://localhost:5050`.
 |---|---|---|
 | Daily idea generation | 7:00 AM | Fresh tweet/thread/video ideas for the day |
 | Daily briefing | 8:30 AM | Morning briefing pushed to Kenneth's WhatsApp |
-| Tweet 1 | 8:00 AM | Post tweet |
-| Tweet 2 | 9:30 AM | Post tweet |
-| Reply sniper | 10:00 AM | Scan influencer accounts for viral reply opportunities |
-| Tweet 3 | 12:00 PM | Post tweet |
-| Tweet 4 | 2:00 PM | Post tweet |
-| Tweet 5 | 3:30 PM | Post tweet |
-| Reply sniper | 3:00 PM | Scan influencer accounts |
-| YT Draft AM | 10:00 AM | Generate + upload YouTube Short |
-| Tweet 6 | 7:00 PM | Post tweet |
-| Reply sniper | 8:00 PM | Scan influencer accounts |
-| YT Draft PM | 4:00 PM | Generate + upload YouTube Short |
-| Tweet 7 | 9:00 PM | Post tweet |
-| Tweet 8 | 10:30 PM | Post tweet |
-| Weekly thread | Saturday 11:00 AM | Post a 5-tweet thread |
+| **Hype tweet** | Every hour :00 — 7am–11pm (17×) | Hot take / stan energy tweet |
+| **Content tweet** | Every hour :20 — 7am–11pm (17×) | Topic-based content tweet |
+| **Joke / meme tweet** | Every hour :40 — 7am–11pm (17×) | Crack joke / meme / shitpost tweet |
+| **Total tweets/day** | — | **51 tweets/day** |
+| **For You engagement** | :10 and :40 every hour, 8am–11pm (32×/day) | Scrape For You feed → like 5 posts → reply to 2 viral posts → learn trending topics |
+| **Reply sniper** | Every 2h :05 — 9am–9pm (7×/day) | Hunt viral influencer tweets, drop on-brand reply |
+| **Thread** | Mon 8pm, Wed 8pm, Sat 11am | 5-tweet thread on rotating topic |
+| **YT Short** | 10am, 1pm, 5pm, 8pm | Generate AI slides → render video → upload → tweet link → WhatsApp notify |
+| **YT startup upload** | On bot start (if 0 uploads today) | Fire one Short within 30s so late-starting days still get content |
 | Inbox summary | Every 3h | DM Kenneth a summary of all messages |
 | Proactive shitpost | Every 2h (active hours) | Drop unprompted post in a real group (50% chance) |
 | Reminder poller | Every 1 min | Fire any due reminders |
-| Notify poller | Every 1 min | Push pending notifications |
+| Notify poller | Every 1 min | Push pending notifications (YT links, health alerts, etc.) |
+| Health ping | Every 30 min | Keep health monitor alive |
 
 ---
 
@@ -577,6 +586,26 @@ Or via API:
 curl -X POST http://localhost:5050/api/social-graph/set-tier \
   -H "Content-Type: application/json" \
   -d '{"contact_id": "91XXXXXXXXXX@c.us", "tier": "FRIENDS"}'
+```
+
+---
+
+## Feed Self-Learning System
+
+Every time the engagement engine runs (every 30 min), the bot:
+
+1. Opens `x.com/home` and scrapes the live **For You** feed (not old search results)
+2. Reads the post texts and sends them to Claude
+3. Claude extracts **5-10 specific trending topics** from what it actually sees (e.g. `"cursor AI vibe coding"`, `"boaster Karmine walkout"` — not generic labels)
+4. Topics are stored in memory (`x_learned_feed_topics`) and merged with previous runs, keeping the 40 most recent
+5. **60% of all tweets** pick a topic from this learned list — the remaining 40% use the hardcoded roster as fallback
+6. Replies also get the top 12 learned topics injected into the AI prompt as context
+
+The result: the bot drifts toward what's actually on people's timelines, not just the same 10 Valorant topics on repeat. No manual updates needed — it adapts on its own.
+
+You can inspect what topics the bot has learned:
+```
+hey ken what did u learn
 ```
 
 ---
@@ -619,14 +648,16 @@ python api_bridge.py
 |---|---|
 | AI | Anthropic Claude (haiku-4-5 / sonnet-4-5 / opus-4) |
 | WhatsApp | whatsapp-web.js (Node.js, QR auth) |
-| Twitter | Playwright headless Chrome |
-| YouTube | YouTube Data API v3 + ffmpeg |
+| Twitter | Playwright headless Chrome — cookie session auth |
+| X Engagement | Playwright — scrapes For You feed, likes, replies, feed-learns |
+| YouTube | YouTube Data API v3 + ffmpeg (1080×1920 portrait, #Shorts) |
+| Background Music | ffmpeg audio mix — .mp3 / .m4a / .wav supported |
 | API | Flask 3.x |
 | Scheduler | APScheduler (CronTrigger, Asia/Kolkata) |
 | Database | SQLite (KV store abstraction) |
 | TTS | ElevenLabs API (optional) |
-| Images | Pillow / PIL (optional, for meme rendering) |
-| Trends | Reddit public JSON API (no auth needed) |
+| Images | Pillow / PIL (slide rendering for YT Shorts) |
+| Trends | Reddit public JSON API (20 subreddits, no auth needed) |
 
 ---
 
