@@ -427,6 +427,12 @@ class XEngagement:
     def _generate_reply(self, text: str, author: str) -> str:
         """Generate a viral-friendly reply, informed by what's trending in the feed."""
         feed_ctx = self.get_feed_context_block()
+        soul_ctx = ""
+        try:
+            from core.soul_engine import soul as _soul
+            soul_ctx = _soul.get_soul_context("twitter")
+        except Exception:
+            pass
         try:
             system = (
                 "You write witty replies to posts on X. Rules:\n"
@@ -445,6 +451,7 @@ class XEngagement:
                 "- If unrelated: be funny/observational, add something to the conversation\n"
                 "- sound like a real extremely-online person with actual knowledge, not a bot\n"
                 + (f"\n{feed_ctx}" if feed_ctx else "")
+                + (f"\n{soul_ctx}" if soul_ctx else "")
             )
             prompt = f"Post by @{author}: {text}\n\nYour reply (max 200 chars):"
             reply = ken_ai._call(system, prompt, model="claude-haiku-4-5", max_tokens=80, use_cache=False)
@@ -510,6 +517,12 @@ class XEngagement:
                 if self._like_post(post["el"], post["id"]):
                     liked_count += 1
                     self._engaged.add(post["id"])
+                    # Soul learning: record this liked post
+                    try:
+                        from core.soul_engine import soul as _soul
+                        _soul.learn_from_x_like(post.get("text", ""), post.get("author", ""), post.get("likes", 0))
+                    except Exception:
+                        pass
                 time.sleep(random.uniform(1.5, 3))
 
             # Reply to the most viral post we haven't touched
@@ -525,6 +538,12 @@ class XEngagement:
                         if self._reply_to_post(page, post["el"], post["id"], post["text"], post["author"], reply_text):
                             replied_count += 1
                             self._engaged.add(post["id"])
+                            # Soul learning: record this reply
+                            try:
+                                from core.soul_engine import soul as _soul
+                                _soul.learn_from_x_reply(post["text"], reply_text, post["author"])
+                            except Exception:
+                                pass
                         time.sleep(random.uniform(3, 5))
 
             # Save updated session
@@ -551,8 +570,24 @@ class XEngagement:
                 topic = random.choice(learned)
                 logger.debug(f"Shitpost using feed-learned topic: {topic}")
             else:
-                topic = random.choice(SHITPOST_TOPICS)
+                # Check soul interests for topic selection
+                try:
+                    from core.soul_engine import soul as _soul
+                    interests = _soul.get_content_interests()
+                    if interests and random.random() < 0.40:
+                        topic = random.choice(interests[:10])
+                        logger.debug(f"Shitpost using soul interest topic: {topic}")
+                    else:
+                        topic = random.choice(SHITPOST_TOPICS)
+                except Exception:
+                    topic = random.choice(SHITPOST_TOPICS)
         feed_ctx = self.get_feed_context_block()
+        soul_ctx = ""
+        try:
+            from core.soul_engine import soul as _soul
+            soul_ctx = _soul.get_soul_context("twitter")
+        except Exception:
+            pass
         try:
             system = (
                 "You write viral tweets. Rules:\n"
@@ -574,10 +609,19 @@ class XEngagement:
                 "- must feel like a real person tweeting at 1am, not a brand or bot\n"
                 "- punchy, specific, quotable — make it feel like something real people would retweet"
                 + (f"\n\n{feed_ctx}" if feed_ctx else "")
+                + (f"\n\n{soul_ctx}" if soul_ctx else "")
             )
-            prompt = f"Write a tweet about: {topic}"
+            prompt = (
+                f"Write ONE tweet about: {topic}\n"
+                "Output ONLY the tweet text. No options, no numbering, no labels, no quotes. "
+                "Just the raw tweet."
+            )
             tweet = ken_ai._call(system, prompt, model="claude-haiku-4-5", max_tokens=100, use_cache=False)
-            return tweet.strip()[:260]
+            # Strip any accidental labeling (e.g. "Option 1:", "Tweet:", quotes)
+            import re as _re
+            tweet = _re.sub(r'^(option\s*\d+[:\-]?\s*|tweet[:\-]?\s*)', '', tweet.strip(), flags=_re.IGNORECASE)
+            tweet = tweet.strip('"\' \n')
+            return tweet[:260]
         except Exception:
             tmpl = random.choice(SHITPOST_TEMPLATES)
             return tmpl.format(topic=topic)

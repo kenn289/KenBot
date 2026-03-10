@@ -414,6 +414,12 @@ def handle_command():
     instruction = data.get("instruction", "").strip()
     if not instruction:
         return jsonify({"reply": "what do u want me to do"}), 200
+    # Soul learning: record what Kenneth explicitly commanded
+    try:
+        from core.soul_engine import soul as _soul
+        _soul.learn_from_command(instruction)
+    except Exception:
+        pass
     reply = ken_ai.handle_command(instruction)
     return jsonify({"reply": reply}), 200
 

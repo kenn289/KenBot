@@ -51,10 +51,31 @@ class YouTubeContentGen:
         Returns package dict with all assets.
         """
         if not topic:
-            picked = ken_ai.pick_content_topic()
-            topic = f"{picked.get('topic')}: {picked.get('angle')}"
+            # Soul-guided topic selection: 40% of the time use learned interests
+            soul_topic = None
+            try:
+                from core.soul_engine import soul as _soul
+                interests = _soul.get_content_interests()
+                if interests and random.random() < 0.40:
+                    soul_topic = random.choice(interests[:10])
+                    logger.debug(f"YT Short using soul interest topic: {soul_topic}")
+            except Exception:
+                pass
+
+            if soul_topic:
+                topic = soul_topic
+            else:
+                picked = ken_ai.pick_content_topic()
+                topic = f"{picked.get('topic')}: {picked.get('angle')}"
 
         logger.info(f"📹 Generating YouTube Short for: {topic}")
+
+        # Soul learning: record the topic we're making a Short about
+        try:
+            from core.soul_engine import soul as _soul
+            _soul.learn_from_yt_topic(topic)
+        except Exception:
+            pass
 
         # 1. Metadata
         metadata = ken_ai.generate_yt_title_and_description(topic)

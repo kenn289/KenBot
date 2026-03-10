@@ -344,6 +344,15 @@ class KenAI:
         if style_summary:
             style_block = f"\nLEARNED STYLE (adapt your replies to match these patterns — this is how he actually texts):\n{style_summary}\n"
 
+        soul_block = ""
+        try:
+            from core.soul_engine import soul as _soul
+            soul_ctx = _soul.get_soul_context("whatsapp")
+            if soul_ctx:
+                soul_block = f"\n{soul_ctx}\n"
+        except Exception:
+            pass
+
         news = self._get_news_context()
         news_block = f"\nCURRENT DATE: {datetime.now().strftime('%d %B %Y')}\nWHAT'S HAPPENING (recent headlines — reference naturally when relevant, don't force it):\n{news}\n" if news else f"\nCURRENT DATE: {datetime.now().strftime('%d %B %Y')}\n"
 
@@ -356,7 +365,7 @@ CURRENT MOOD: {mood_profile['name'].upper()}
 ═══════════════════════════
 {news_block}
 GROUP MODE: {persona_section}
-{contact_block}{facts_block}{style_block}
+{contact_block}{facts_block}{style_block}{soul_block}
 {RESPONSE_RULES}
 """.strip()
 
@@ -559,12 +568,21 @@ GROUP MODE: {persona_section}
         if convo_context:
             convo_block = f"\nHIS SOCIAL WORLD / WHAT HIS CIRCLE TALKS ABOUT (use this for authenticity, don't force it):\n{convo_context}\n"
 
+        soul_block = ""
+        try:
+            from core.soul_engine import soul as _soul
+            soul_ctx = _soul.get_soul_context("twitter")
+            if soul_ctx:
+                soul_block = f"\n{soul_ctx}\n"
+        except Exception:
+            pass
+
         system = (
             "You are ghostwriting a tweet for a real Gen Z person. "
             "Sound like a human who actually lives this — not a brand, not a bot, not a motivational page. "
             "Raw, casual, unfiltered. Use lowercase, abbreviations, skip punctuation where it feels natural. "
             "Never use hashtags like a press release. If the topic is personal/niche, lean into it hard."
-            f"{style_block}{convo_block}"
+            f"{style_block}{convo_block}{soul_block}"
         )
         prompt = (
             f"Write ONE tweet about: {topic}\n"
