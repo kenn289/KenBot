@@ -88,6 +88,7 @@ git add .gitignore
 | **Analytics** | Records tweet and YT performance. Tracks top performers. |
 | **Engagement optimizer** | Reads analytics + humor engine to output concrete strategy recommendations. |
 | **Reddit engine** | Finds posting opportunities in relevant subreddits and drafts genuine comments. |
+| **Promotion manager** | Controlled repo promotion across X + Reddit with allowlisted subreddits, cooldowns, and daily caps. |
 | **Knowledge graph** | Lightweight graph linking people, topics, and events for context enrichment. |
 | **Facts store** | Visibility-tagged personal fact store shared by WhatsApp contacts or Kenneth himself. |
 | **Health monitor** | Background heartbeat monitor. Alerts Kenneth via WhatsApp if any service goes down. |
@@ -515,6 +516,13 @@ curl http://localhost:5050/api/reddit/status
 - API mode: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`, `REDDIT_PASSWORD`
 - or browser session mode (login helper/session file)
 
+**Optional for controlled repo promotion:**
+- `PROMO_ENABLED`
+- `PROMO_REPO_URL`
+- `PROMO_REDDIT_ALLOWLIST`
+- `PROMO_X_DAILY_CAP`, `PROMO_REDDIT_DAILY_CAP`
+- `PROMO_X_COOLDOWN_MINUTES`, `PROMO_REDDIT_COOLDOWN_MINUTES`
+
 **Required for YouTube upload:**
 - `GOOGLE_OAUTH_CREDENTIALS` pointing to `credentials/google_oauth.json`
 
@@ -598,6 +606,14 @@ All endpoints run on `http://localhost:5050`.
 | POST | `/api/meme` | Generate meme data `{format?, topic?}` |
 | GET | `/api/reddit/opportunities` | Reddit posting opportunities |
 
+### Promotion Manager
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/promo/status` | Promotion settings + cooldown/cap status |
+| POST | `/api/promo/run` | Run promotion campaign now (`{"x":true,"reddit":true,"max_reddit_comments":1,"force_reddit_link":false}`) |
+| GET | `/api/promo/analytics?limit=10` | Last promo attempts with reasons (posted/skipped/cooldown/cap/failure) |
+
 ### Analytics + Social Graph
 
 | Method | Endpoint | Description |
@@ -639,6 +655,7 @@ All endpoints run on `http://localhost:5050`.
 | **Thread** | Mon 8pm, Wed 8pm, Sat 11am | 5-tweet thread on rotating topic |
 | **YT Short** | 10am, 1pm, 5pm, 8pm | Generate AI slides → render video → upload → tweet link → WhatsApp notify |
 | **YT startup upload** | On bot start (if 0 uploads today) | Fire one Short within 30s so late-starting days still get content |
+| **Promotion manager** | 12:35 PM and 8:35 PM | Controlled X + Reddit repo promotion (allowlist + cooldown + caps) |
 | Inbox summary | Every 3h | DM Kenneth a summary of all messages |
 | Proactive shitpost | Every 2h (active hours) | Drop unprompted post in a real group (50% chance) |
 | Reminder poller | Every 1 min | Fire any due reminders |
@@ -690,6 +707,48 @@ The result: the bot drifts toward what's actually on people's timelines, not jus
 You can inspect what topics the bot has learned:
 ```
 hey ken what did u learn
+```
+
+---
+
+## Promotion Manager (safe self-promo)
+
+The promotion manager is designed to avoid spam while still helping discovery.
+
+Safety controls:
+- only runs when `PROMO_ENABLED=true`
+- requires `PROMO_REPO_URL`
+- Reddit promotion only in `PROMO_REDDIT_ALLOWLIST`
+- per-platform cooldown windows
+- per-day hard caps
+- never promotes twice in the same Reddit thread
+
+Manual run example:
+
+```bash
+curl -X POST http://localhost:5050/api/promo/run \
+   -H "Content-Type: application/json" \
+   -d '{"x": true, "reddit": true, "max_reddit_comments": 1, "force_reddit_link": false}'
+```
+
+If you explicitly want direct repo mention in Reddit comments for this run:
+
+```bash
+curl -X POST http://localhost:5050/api/promo/run \
+   -H "Content-Type: application/json" \
+   -d '{"x": false, "reddit": true, "max_reddit_comments": 1, "force_reddit_link": true}'
+```
+
+Status example:
+
+```bash
+curl http://localhost:5050/api/promo/status
+```
+
+Analytics panel (latest attempts):
+
+```bash
+curl http://localhost:5050/api/promo/analytics?limit=10
 ```
 
 ---

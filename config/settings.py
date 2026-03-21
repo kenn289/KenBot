@@ -14,7 +14,7 @@ from pydantic_settings import BaseSettings
 
 # Locate repo root and load .env
 ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(ROOT / ".env")
+load_dotenv(ROOT / ".env", override=True)
 
 
 class Settings(BaseSettings):
@@ -60,6 +60,18 @@ class Settings(BaseSettings):
     reddit_user_agent: str = Field("KenBot/1.0 by Kenneth", env="REDDIT_USER_AGENT")
     reddit_auto_enabled: bool = Field(True, env="REDDIT_AUTO_ENABLED")
 
+    # ── Promotion manager (controlled self-promo) ─────────
+    promo_enabled: bool = Field(False, env="PROMO_ENABLED")
+    promo_repo_url: str = Field("", env="PROMO_REPO_URL")
+    promo_reddit_allowlist_raw: str = Field(
+        "sideproject,entrepreneur,startups,smallbusiness,indiehackers,programming,python,artificial,MachineLearning",
+        env="PROMO_REDDIT_ALLOWLIST",
+    )
+    promo_x_daily_cap: int = Field(2, env="PROMO_X_DAILY_CAP")
+    promo_reddit_daily_cap: int = Field(2, env="PROMO_REDDIT_DAILY_CAP")
+    promo_x_cooldown_minutes: int = Field(360, env="PROMO_X_COOLDOWN_MINUTES")
+    promo_reddit_cooldown_minutes: int = Field(360, env="PROMO_REDDIT_COOLDOWN_MINUTES")
+
     # ── App ────────────────────────────────────────
     flask_port: int = Field(5050, env="FLASK_PORT")
     my_whatsapp_number: str = Field("", env="MY_WHATSAPP_NUMBER")
@@ -87,6 +99,10 @@ class Settings(BaseSettings):
     @property
     def memory_dir(self) -> Path:
         return ROOT / "memory" / "sessions"
+
+    @property
+    def promo_reddit_allowlist(self) -> List[str]:
+        return [s.strip().lower() for s in self.promo_reddit_allowlist_raw.split(",") if s.strip()]
 
     class Config:
         env_file = str(ROOT / ".env")

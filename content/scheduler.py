@@ -163,6 +163,21 @@ class ContentScheduler:
             misfire_grace_time=3600,
         )
 
+        # ── Promotion manager: controlled self-promo windows ─────────────
+        # Low-frequency, staggered away from heavy X/Reddit automation.
+        for job_id, hour, minute in [
+            ("promo_noon", 12, 35),
+            ("promo_evening", 20, 35),
+        ]:
+            self.scheduler.add_job(
+                func=self._run_promotion_campaign,
+                trigger=CronTrigger(hour=hour, minute=minute, timezone=TZ),
+                id=job_id,
+                name=f"Promotion {hour}:{minute:02d}",
+                replace_existing=True,
+                misfire_grace_time=900,
+            )
+
         # ── Scheduler health ping: every 30 min ─────────────────────────────────────
         self.scheduler.add_job(
             func=lambda: health_monitor.ping("scheduler"),
@@ -323,6 +338,15 @@ class ContentScheduler:
             )
         except Exception as exc:
             logger.error(f"Reddit auto job failed: {exc}")
+
+    def _run_promotion_campaign(self) -> None:
+        logger.info("📣 Promotion campaign job running…")
+        try:
+            from growth.promotion_manager import promotion_manager
+            result = promotion_manager.run_campaign(do_x=True, do_reddit=True, max_reddit_comments=1)
+            logger.info(f"Promotion campaign result: {result}")
+        except Exception as exc:
+            logger.error(f"Promotion campaign failed: {exc}")
 
     def _post_shitpost(self) -> None:
         logger.info("⏰ Shitpost job running…")

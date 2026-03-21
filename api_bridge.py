@@ -644,6 +644,38 @@ def generate_meme():
     return jsonify(result), 200
 
 
+@app.route("/api/promo/status", methods=["GET"])
+def promo_status():
+    from growth.promotion_manager import promotion_manager
+    return jsonify(promotion_manager.status()), 200
+
+
+@app.route("/api/promo/run", methods=["POST"])
+def promo_run():
+    data = request.get_json(force=True) or {}
+    do_x = bool(data.get("x", True))
+    do_reddit = bool(data.get("reddit", True))
+    force_reddit_link = bool(data.get("force_reddit_link", False))
+    max_reddit_comments = int(data.get("max_reddit_comments", 1))
+    max_reddit_comments = max(1, min(max_reddit_comments, 2))
+    from growth.promotion_manager import promotion_manager
+    result = promotion_manager.run_campaign(
+        do_x=do_x,
+        do_reddit=do_reddit,
+        max_reddit_comments=max_reddit_comments,
+        force_reddit_link=force_reddit_link,
+    )
+    return jsonify(result), 200
+
+
+@app.route("/api/promo/analytics", methods=["GET"])
+def promo_analytics():
+    from growth.promotion_manager import promotion_manager
+    limit = int(request.args.get("limit", 10))
+    limit = max(1, min(limit, 50))
+    return jsonify(promotion_manager.analytics(limit=limit)), 200
+
+
 def run_api(port: int = 5050) -> None:
     # Wire health monitor alert → queue WhatsApp DM to Kenneth
     def _alert_ken(msg: str) -> None:
