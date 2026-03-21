@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     # ── App ────────────────────────────────────────
     flask_port: int = Field(5050, env="FLASK_PORT")
     my_whatsapp_number: str = Field("", env="MY_WHATSAPP_NUMBER")
-    ken_real_groups_raw: str = Field("Jaatre bois,Bengaluru Big Ball Beasts👾👾,somalian day care center", env="KEN_REAL_GROUPS")
+    ken_real_groups_raw: str = Field("", env="KEN_REAL_GROUPS")  # Bot is silent in all groups
     log_level: str = Field("INFO", env="LOG_LEVEL")
     timezone: str = Field("Asia/Kolkata", env="TIMEZONE")
 

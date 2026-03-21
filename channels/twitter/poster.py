@@ -19,7 +19,7 @@ from utils.helpers import fingerprint, truncate, clean_for_tweet
 from utils.logger import logger
 
 SESSION_PATH = Path(settings.root_dir) / "credentials" / "twitter_session.json"
-MAX_TWEETS_PER_DAY = 50  # 2/hour across ~15 active hours
+MAX_TWEETS_PER_DAY = 300  # Twitter API v2 Basic allows ~200 writes/day; browser has no hard cap
 
 
 class TwitterPoster:

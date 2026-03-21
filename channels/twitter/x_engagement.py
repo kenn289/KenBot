@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import random
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -19,9 +20,64 @@ from utils.logger import logger
 SESSION_PATH   = Path(settings.root_dir) / "credentials" / "twitter_session.json"
 ENGAGED_KEY    = "x_engaged_posts"       # post IDs we already acted on
 LEARNED_KEY    = "x_learned_feed_topics" # AI-discovered topics from the feed
+RECENT_TOPICS_KEY = "x_recent_post_topics"  # topics used recently — avoid repeating
 MAX_LIKES_PER_RUN    = 5
 MAX_REPLIES_PER_RUN  = 2
 LEARNED_TOPICS_MAX   = 40  # keep last N discovered topics in memory
+RECENT_TOPICS_MAX    = 20  # rolling window of recent post topics to remember
+TOPIC_COOLDOWN_POSTS = 8   # don't reuse the same topic slug within this many posts
+
+# ── Content pillar rotation — ensures variety across tweet categories ────────
+# Each run picks the pillar that was used LEAST recently.
+CONTENT_PILLARS = [
+    "valorant_esports",
+    "cricket_ipl",
+    "f1_racing",
+    "tech_ai_coding",
+    "meme_internet",
+    "bollywood_pop",
+    "general_chaos",
+]
+
+# Per-pillar topic pools — cycling within a pillar also rotates sub-topics
+PILLAR_TOPICS: dict[str, list[str]] = {
+    "valorant_esports": [
+        "TenZ", "Zekken", "Sacy", "Sentinels", "fns", "boaster", "tarik", "shanks",
+        "yay", "nAts", "aspas", "Derke", "Demon1", "LOUD", "Fnatic", "NRG Valorant",
+        "Karmine Corp", "VCT Champions", "Valorant ranked", "Valorant agent meta",
+        "VCT Americas", "VCT EMEA", "VCT Pacific", "Valorant patch notes",
+    ],
+    "cricket_ipl": [
+        "Kohli", "RCB", "Rohit Sharma", "Jasprit Bumrah", "IPL 2026",
+        "India test cricket", "India vs Pakistan", "MS Dhoni legacy",
+        "T20 World Cup", "Hardik Pandya", "Shubman Gill", "Yashasvi Jaiswal",
+    ],
+    "f1_racing": [
+        "Max Verstappen", "Carlos Sainz", "Charles Leclerc", "Lewis Hamilton",
+        "Ferrari 2026", "F1 qualifying drama", "F1 tyre strategy",
+        "Red Bull Racing", "Lando Norris", "McLaren F1", "F1 Miami GP",
+    ],
+    "tech_ai_coding": [
+        "vibe coding", "ChatGPT", "Claude AI", "cursor AI", "AI replacing devs",
+        "debugging at 2am", "leetcode grind", "tech layoffs 2026", "software engineers",
+        "AI agents", "startup culture", "open source", "python is life",
+        "developer memes", "stackoverflow", "tech interviews",
+    ],
+    "meme_internet": [
+        "twitter drama", "Indian meme", "reddit meme", "the algorithm",
+        "going viral", "ratio", "chronically online", "main character energy",
+        "parasocial", "brain rot content", "NPC energy", "rizz",
+    ],
+    "bollywood_pop": [
+        "Bollywood 2026", "Netflix India", "Marvel 2026", "new anime drop",
+        "Indian music", "Arijit Singh", "SRK", "Ranveer Singh energy",
+    ],
+    "general_chaos": [
+        "Monday morning", "sleep", "food delivery", "traffic", "bangalore life",
+        "Indian tech bro", "overthinking", "late night thoughts", "adulting is hard",
+        "2am thoughts", "weekend vs monday", "chai supremacy",
+    ],
+}
 
 # ── Topics to hunt for (likes + replies) ────────────────────────────────────
 SEARCH_TOPICS = [
@@ -75,7 +131,7 @@ SHITPOST_TEMPLATES = [
     # Tech / AI jokes
     "the {topic} hype is real and i am drinking the kool-aid unironically",
     "me: i'll sleep early\n{topic}: new update dropped\nme: ",
-    "they said {topic} would replace us. bro replaced most of my coworkers first.",
+    "they said {topic} would replace us. it replaced most of my coworkers first.",
     # Internet / relatable
     "nobody:\nme at 2am: reading every thread about {topic} ever written",
     "getting into {topic} is genuinely a personality trait at this point",
@@ -139,17 +195,22 @@ class XEngagement:
 
     def _learn_from_feed(self, posts: list[dict]) -> list[str]:
         """
-        After scraping the For You feed, ask AI what topics are actually trending
-        in those post texts. Persist to memory so future tweets can reference them.
+        After scraping the For You feed:
+        1. Ask AI what topics are trending (stored for shitpost + tweet generation)
+        2. Tag each post dict with a detected topic string in-place
+           (used downstream to filter reply targets + pass topic to _generate_reply)
         Returns list of discovered topic strings.
         """
         if not posts:
             return []
-        # Build a condensed snapshot of what the feed looks like right now
         texts = [p["text"] for p in posts if p.get("text")]
         if not texts:
             return []
+
         feed_snapshot = "\n".join(f"- {t[:160]}" for t in texts[:20])
+
+        # ── Step 1: batch topic discovery (for shitpost/tweet prompts) ──────
+        discovered: list[str] = []
         try:
             system = (
                 "You are an analyst reading a Twitter/X For You feed. "
@@ -160,30 +221,49 @@ class XEngagement:
             )
             prompt = f"For You feed right now:\n{feed_snapshot}\n\nReturn JSON array of trending topics:"
             raw = ken_ai._call(system, prompt, model="claude-haiku-4-5", max_tokens=200, use_cache=False)
-            # Parse JSON array
             raw = raw.strip()
             if raw.startswith("```"):
                 raw = "\n".join(raw.split("\n")[1:]).rstrip("`").strip()
-            discovered: list[str] = json.loads(raw)
-            if not isinstance(discovered, list):
-                return []
-            discovered = [str(t).strip() for t in discovered if t][:10]
+            discovered = [str(t).strip() for t in json.loads(raw) if t][:10]
 
-            # Merge with existing learned topics, keep freshest
             existing_raw = memory.get(LEARNED_KEY, "[]")
             try:
                 existing: list[str] = json.loads(existing_raw)
             except Exception:
                 existing = []
-            # Prepend new (most recent first), dedup, cap at LEARNED_TOPICS_MAX
             merged = discovered + [t for t in existing if t not in discovered]
-            merged = merged[:LEARNED_TOPICS_MAX]
-            memory.set(LEARNED_KEY, json.dumps(merged))
+            memory.set(LEARNED_KEY, json.dumps(merged[:LEARNED_TOPICS_MAX]))
             logger.info(f"Feed learned {len(discovered)} new topics: {discovered[:5]}")
-            return discovered
         except Exception as exc:
-            logger.debug(f"Feed learning failed: {exc}")
-            return []
+            logger.debug(f"Feed topic discovery failed: {exc}")
+
+        # ── Step 2: per-post topic tagging (used for reply targeting) ────────
+        # One batch AI call tags all posts at once → no extra latency per reply
+        try:
+            indexed = [(i, p) for i, p in enumerate(posts) if p.get("text")]
+            if indexed:
+                batch = "\n".join(f'{i}: "{p["text"][:120]}"' for i, p in indexed)
+                tag_system = (
+                    "Tag each post with ONE short topic category (2-4 words max). "
+                    "Examples: 'valorant vct', 'football arsenal', 'cricket ipl', "
+                    "'f1 race', 'tech ai', 'coding meme', 'bollywood', 'crypto', "
+                    "'basketball nba', 'general meme'. "
+                    "Return ONLY a JSON object mapping index string → topic string."
+                )
+                tag_prompt = f"Posts:\n{batch}\n\nReturn JSON object:"
+                tag_raw = ken_ai._call(tag_system, tag_prompt, model="claude-haiku-4-5", max_tokens=300, use_cache=False)
+                tag_raw = tag_raw.strip()
+                if tag_raw.startswith("```"):
+                    tag_raw = "\n".join(tag_raw.split("\n")[1:]).rstrip("`").strip()
+                tags: dict = json.loads(tag_raw)
+                for i, post in indexed:
+                    post["topic"] = str(tags.get(str(i), "general")).lower().strip()
+                logger.debug(f"Per-post topics tagged: {[p.get('topic','?') for p in posts[:6]]}")
+        except Exception as exc:
+            logger.debug(f"Per-post topic tagging failed: {exc}")
+            # Fall back — posts without topic field will use "general"
+
+        return discovered
 
     def _get_learned_topics(self) -> list[str]:
         """Return AI-discovered topics from recent For You feeds."""
@@ -339,6 +419,86 @@ class XEngagement:
         logger.info(f"Scraped {len(posts)} posts for: {query}")
         return posts
 
+    # ── Scrape the For You home feed ─────────────────────────────────────────
+
+    def scrape_for_you_feed(self, page, max_posts: int = 25) -> list[dict]:
+        """
+        Scrape posts from the X For You home timeline (live feed the algorithm pushes).
+        Assumes _is_logged_in() was already called (page is already on x.com/home).
+        Returns list of dicts: {id, text, author, url, el, likes}
+        """
+        # Make sure we're on home; click the "For you" tab if it's present
+        try:
+            for_you = page.locator('[role="tab"]:has-text("For you")').first
+            for_you.wait_for(state="visible", timeout=5000)
+            for_you.click()
+            time.sleep(2)
+        except Exception:
+            # Tab not found or already selected — just proceed
+            pass
+
+        posts: list[dict] = []
+        seen_ids: set[str] = set()
+
+        for scroll_pass in range(6):  # up to 6 scroll passes to gather max_posts
+            articles = page.locator('article[data-testid="tweet"]').all()
+            for article in articles:
+                try:
+                    # Tweet ID from the status URL embedded in the article
+                    link_el = article.locator('a[href*="/status/"]').first
+                    href = link_el.get_attribute("href")
+                    if not href:
+                        continue
+                    tweet_id = href.split("/status/")[-1].split("/")[0].split("?")[0]
+                    if not tweet_id or tweet_id in seen_ids or tweet_id in self._engaged:
+                        continue
+                    seen_ids.add(tweet_id)
+
+                    # Tweet text
+                    try:
+                        text = article.locator('[data-testid="tweetText"]').first.inner_text(timeout=2000)
+                    except Exception:
+                        text = ""
+
+                    # Author handle
+                    try:
+                        author_href = article.locator('[data-testid="User-Name"] a').last.get_attribute("href") or ""
+                        author = author_href.lstrip("/").split("/")[0]
+                    except Exception:
+                        author = ""
+
+                    # Like count
+                    likes = 0
+                    try:
+                        raw = article.locator('[data-testid="like"] span').last.inner_text(timeout=1500).strip()
+                        raw = raw.replace(",", "")
+                        if raw:
+                            likes = int(float(raw.replace("K", "")) * 1000) if "K" in raw else int(raw)
+                    except Exception:
+                        likes = 0
+
+                    posts.append({
+                        "id":     tweet_id,
+                        "text":   text,
+                        "author": author,
+                        "url":    f"https://x.com{href}",
+                        "el":     article,
+                        "likes":  likes,
+                    })
+
+                    if len(posts) >= max_posts:
+                        break
+                except Exception:
+                    continue
+
+            if len(posts) >= max_posts:
+                break
+            page.evaluate("window.scrollBy(0, 900)")
+            time.sleep(random.uniform(1.5, 2.5))
+
+        logger.info(f"For You feed scraped: {len(posts)} posts")
+        return posts
+
     # ── Like a post ───────────────────────────────────────────────────────────
 
     def _like_post(self, article, tweet_id: str) -> bool:
@@ -355,10 +515,36 @@ class XEngagement:
 
     # ── Reply to a post ───────────────────────────────────────────────────────
 
-    def _reply_to_post(self, page, article, tweet_id: str, text: str, author: str, reply_text: str) -> bool:
+    def _reply_to_post(self, page, tweet_id: str, text: str, author: str, reply_text: str, tweet_url: str = "") -> bool:
+        """
+        Navigate directly to the tweet URL before replying.
+        This avoids stale Playwright element references caused by page scrolls
+        that happen during the learning/AI calls between scraping and replying.
+        """
         try:
-            reply_btn = article.locator('[data-testid="reply"]').first
-            reply_btn.wait_for(state="visible", timeout=4000)
+            # Go directly to the tweet — guarantees we're on the right post
+            url = tweet_url or f"https://x.com/{author}/status/{tweet_id}"
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            time.sleep(random.uniform(1.8, 2.8))
+
+            # Click the reply button on the main (first) tweet on the detail page
+            reply_btn = None
+            for sel in [
+                '[data-testid="reply"]',
+                'article [data-testid="reply"]',
+            ]:
+                try:
+                    el = page.locator(sel).first
+                    el.wait_for(state="visible", timeout=5000)
+                    reply_btn = el
+                    break
+                except Exception:
+                    continue
+
+            if not reply_btn:
+                logger.debug(f"Reply button not found on tweet page: {tweet_id}")
+                return False
+
             reply_btn.click()
             time.sleep(2)
 
@@ -379,7 +565,6 @@ class XEngagement:
 
             if not compose:
                 logger.debug(f"Reply compose not found for {tweet_id}")
-                # Close modal if open
                 try:
                     page.keyboard.press("Escape")
                 except Exception:
@@ -389,9 +574,9 @@ class XEngagement:
             compose.click()
             time.sleep(0.3)
             compose.fill(reply_text)
-            time.sleep(random.uniform(0.8, 1.2))
+            time.sleep(random.uniform(0.8, 1.4))
 
-            # Click Post button
+            # Click Post / Reply button
             post_btn = None
             for btn_sel in [
                 '[data-testid="tweetButton"]',
@@ -422,39 +607,149 @@ class XEngagement:
                 pass
             return False
 
-    # ── Generate reply via AI ─────────────────────────────────────────────────
+    # ── Domain expertise block (topic-matched, not injected blindly) ─────────
 
-    def _generate_reply(self, text: str, author: str) -> str:
-        """Generate a viral-friendly reply, informed by what's trending in the feed."""
-        feed_ctx = self.get_feed_context_block()
-        soul_ctx = ""
+    @staticmethod
+    def _fetch_topic_context(topic: str) -> str:
+        """
+        Fetches current grounded facts about a topic from the soul engine.
+        Injected into tweet/reply prompts so the bot never posts stale/wrong info.
+        E.g. before tweeting about Man City → gets current form, standings, key players.
+        Before replying about Linkin Park → knows Chester died 2017, new vocalist 2024, etc.
+        """
+        if not topic or topic.lower().strip() in ("general", "general meme", "meme", "internet", ""):
+            return ""
         try:
             from core.soul_engine import soul as _soul
-            soul_ctx = _soul.get_soul_context("twitter")
+            return _soul.build_topic_context(topic)
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _domain_block(topic: str) -> str:
+        """
+        Returns topic-specific knowledge snippet ONLY when the post matches.
+        This prevents Valorant knowledge bleeding into football replies.
+        """
+        t = topic.lower()
+        if any(k in t for k in ("valorant", "vct", "tenz", "sentinels", "zekken", "sacy", "fnatic valo",
+                                 "boaster", "tarik", "nats", "aspas", "derke", "demon1", "esport")):
+            return (
+                "\nVALORANT EXPERTISE: Deep knowledge — TenZ/Sentinels/Zekken/Sacy are home team. "
+                "fns = best IGL. boaster = chaotic king. tarik = content goat. "
+                "Know VCT Americas/EMEA/Pacific rosters, agent meta, patch notes. "
+                "React like a genuine stan with actual scene knowledge.\n"
+            )
+        if any(k in t for k in ("cricket", "ipl", "kohli", "rcb", "bcci", "ind ", "india cricket",
+                                 "virat", "rohit", "test match", "odi", "t20")):
+            return (
+                "\nCRICKET EXPERTISE: Kohli/RCB devotee. India cricket pride. "
+                "Know current squads, Test rankings, IPL storylines. React with passion.\n"
+            )
+        if any(k in t for k in ("f1", "formula 1", "formula one", "verstappen", "sainz", "hamilton",
+                                 "ferrari", "red bull racing", "grand prix", "qualifying", "gp ")):
+            return (
+                "\nF1 EXPERTISE: Max Verstappen + Carlos Sainz loyalist. Know team standings, "
+                "race results, tyre strategy debates. React with genuine fan energy.\n"
+            )
+        if any(k in t for k in ("tech", "ai ", "openai", "claude", "gpt", "coding", "software",
+                                 "developer", "cursor", "vibe cod", "startup", "python", "javascript")):
+            return (
+                "\nTECH EXPERTISE: Bangalore software engineer. Relatable dev humor, "
+                "AI takes, vibe coding opinions, startup culture observations.\n"
+            )
+        if any(k in t for k in ("football", "soccer", "premier league", "champions league", "arsenal",
+                                 "man city", "liverpool", "manchester", "chelsea", "real madrid",
+                                 "barcelona", "fifa", "la liga")):
+            return (
+                "\nFOOTBALL: Casual observer — enjoy the sport, know the big clubs. "
+                "React naturally to what's in the post, don't pretend deep expertise.\n"
+            )
+        # For everything else — no domain block, just use your voice
+        return ""
+
+    # ── Generate reply via AI ─────────────────────────────────────────────────
+
+    def _generate_reply(self, text: str, author: str, post_topic: str = "general") -> str:
+        """
+        Generate a reply that's strictly on-topic, sounds genuinely human,
+        and picks the most fitting style for the specific post.
+        """
+        import re as _re
+
+        voice_ctx = ""
+        try:
+            from core.soul_engine import soul as _soul
+            voice_ctx = _soul.get_voice_context()
         except Exception:
             pass
+
+        domain = self._domain_block(post_topic)
+
+        # Fetch current grounded facts about this specific topic
+        # so the reply never says something factually embarrassing
+        topic_facts = self._fetch_topic_context(post_topic)
+
         try:
-            system = (
-                "You write witty replies to posts on X. Rules:\n"
-                "- max 200 chars\n"
-                "- lowercase, gen-z, very online energy\n"
-                "- NO personal info — no real names, city, job, school, relationships\n"
-                "- no hashtags\n"
-                "- can be: hot take, funny observation, passionate stan reply, hype, roast the take (not person)\n"
-                "- Valorant knowledge: stan TenZ/Sentinels/Zekken/Sacy. Respect fns (best IGL brain). "
-                "Love boaster's energy. Follow tarik. Rate shanks, yay, nAts, aspas, Derke, Demon1. "
-                "Know VCT Americas/EMEA/Pacific, team rosters, meta, agent picks, patch changes.\n"
-                "- Cricket: Kohli/RCB stan. India cricket pride.\n"
-                "- F1: Max Verstappen + Carlos Sainz loyalist.\n"
-                "- Tech/AI/dev: relatable software engineer humor, AI takes, vibe coding opinions.\n"
-                "- If post is about any of your topics: go full knowledgeable stan mode with specific context\n"
-                "- If unrelated: be funny/observational, add something to the conversation\n"
-                "- sound like a real extremely-online person with actual knowledge, not a bot\n"
-                + (f"\n{feed_ctx}" if feed_ctx else "")
-                + (f"\n{soul_ctx}" if soul_ctx else "")
+            system = f"""You're ghostwriting a reply tweet for an extremely-online person.
+
+THEIR VOICE (HOW to write — NOT what to write about):
+{voice_ctx if voice_ctx else 'young bangalore software engineer, massive esports/sports nerd, gen-z, always online'}
+{domain}
+{topic_facts}
+══ THE ONLY RULE THAT MATTERS ══
+Reply to what this post is ACTUALLY about. Topic: {post_topic}.
+Never pivot to a different subject.
+Use the CURRENT FACTS above to make sure you don't say anything wrong.
+If you're not sure of a fact, don't assert it — react to the vibe instead.
+
+PICK whatever style fits this particular post best:
+  quick reaction  → "okay this actually cooked", "lmaooo stop", "wait this is so real"
+  hot take        → spicy angle or light counter (roast the *take*, never the person)
+  quote+react     → pull a word/phrase from their post and spin it
+  relate hard     → "this is literally me", "why does this keep happening"
+  fan hype        → full stan energy when something great happened
+  genuine q       → one real question sparked by the post
+  absurd take     → surreal but still on-topic — unhinged in a funny way
+  just vibes      → sometimes the best reply is four words and a lowercase laugh
+
+GOOD REPLY ENERGY (real person, varied — not all the same opener):
+  okay that one tap genuinely made me close my eyes
+  this take is so wrong it came back around to being right
+  the audacity of this being actually true
+  why does this keep happening every single time
+  fr nobody talks about this enough
+  lmaooo the disrespect is astronomical
+  wait they actually did that??
+  this is NOT the outcome i prayed for
+  silent >> loud every time
+  that's genuinely unhinged and i respect it
+  i have been saying this for months
+  the way this just ruined my evening
+
+BOT PATTERNS TO NEVER DO:
+  ✗ "That's a great point!"
+  ✗ Restating what they said back to them
+  ✗ "As a [topic] fan, I think..."
+  ✗ Starting with "I think" or "This is"
+  ✗ Complimenting them before the actual take
+  ✗ Generic hype with no specific detail from the post
+  ✗ Starting with "nah" or "bro" — you've already used those too much today, pick something else
+
+FORMAT:
+- all lowercase (caps only for intentional shouting e.g. "LMAOOO")
+- 5-160 chars — shorter can be funnier, leave room for the post to breathe
+- no hashtags, no @mentions unless quoting their handle naturally
+- raw, punchy — text-message energy, not a facebook status"""
+
+            prompt = (
+                f"Post by @{author}:\n{text}\n\n"
+                "Best reply (pick the style that actually fits, be specific to THIS post):"
             )
-            prompt = f"Post by @{author}: {text}\n\nYour reply (max 200 chars):"
-            reply = ken_ai._call(system, prompt, model="claude-haiku-4-5", max_tokens=80, use_cache=False)
+            reply = ken_ai._call(system, prompt, model="claude-haiku-4-5", max_tokens=90, use_cache=False)
+            # Strip any wrapper the AI adds
+            reply = reply.strip().strip('"\'')
+            reply = _re.sub(r'^(reply[:\-]?\s*|option\s*\d+[:\-]?\s*)', '', reply, flags=_re.IGNORECASE)
             return reply.strip()[:200]
         except Exception as e:
             logger.debug(f"Reply gen failed: {e}")
@@ -517,34 +812,71 @@ class XEngagement:
                 if self._like_post(post["el"], post["id"]):
                     liked_count += 1
                     self._engaged.add(post["id"])
-                    # Soul learning: record this liked post
+                    # Soul learning: record this liked post WITH its detected topic
                     try:
                         from core.soul_engine import soul as _soul
-                        _soul.learn_from_x_like(post.get("text", ""), post.get("author", ""), post.get("likes", 0))
+                        tag = post.get("topic", "")
+                        text_with_topic = f"[{tag}] {post.get('text', '')}" if tag else post.get("text", "")
+                        _soul.learn_from_x_like(text_with_topic, post.get("author", ""), post.get("likes", 0))
                     except Exception:
                         pass
                 time.sleep(random.uniform(1.5, 3))
 
             # Reply to the most viral post we haven't touched
+            # Build interest keywords dynamically from the soul's live topic web
+            # — grows as Kenneth reveals more preferences (Man City, Linkin Park, etc.)
+            _base_keywords = (
+                "valorant", "vct", "tenz", "sentinels", "esport",
+                "cricket", "ipl", "kohli", "rcb", "india cricket",
+                "f1", "formula", "verstappen", "sainz",
+                "tech", "ai ", "coding", "software", "developer", "startup",
+                "football", "soccer", "premier league", "champions league",
+                "gaming", "game", "bollywood", "meme", "funny", "humour",
+                "linkin park", "man city", "manchester city",  # known preferences
+            )
+            # Pull additional keywords from the expanded interest web
+            _web_keywords: tuple[str, ...] = ()
+            try:
+                from core.soul_engine import soul as _soul
+                dynamic = _soul.get_dynamic_topics()
+                # Convert topics into lowercase short slugs for keyword matching
+                _web_keywords = tuple(t.lower()[:30] for t in dynamic[:40])
+            except Exception:
+                pass
+            KEN_INTEREST_KEYWORDS = _base_keywords + _web_keywords
             for post in viral_posts:
                 if replied_count >= MAX_REPLIES_PER_RUN:
                     break
                 if post["id"] in self._engaged or not post["text"]:
                     continue
-                # Target posts with real engagement — our reply gets visibility
-                if post["likes"] >= 100 or len(viral_posts) < 5:
-                    reply_text = self._generate_reply(post["text"], post["author"])
-                    if reply_text:
-                        if self._reply_to_post(page, post["el"], post["id"], post["text"], post["author"], reply_text):
-                            replied_count += 1
-                            self._engaged.add(post["id"])
-                            # Soul learning: record this reply
-                            try:
-                                from core.soul_engine import soul as _soul
-                                _soul.learn_from_x_reply(post["text"], reply_text, post["author"])
-                            except Exception:
-                                pass
-                        time.sleep(random.uniform(3, 5))
+                if post["likes"] < 100 and len(viral_posts) >= 5:
+                    continue
+
+                post_topic = post.get("topic", "general")
+                post_text_lower = post["text"].lower()
+
+                # Skip posts on topics we have nothing to add to
+                topic_match = any(
+                    k in post_topic or k in post_text_lower
+                    for k in KEN_INTEREST_KEYWORDS
+                )
+                if not topic_match:
+                    logger.debug(f"Skipping off-topic post [{post_topic}]: {post['text'][:60]}")
+                    continue
+
+                reply_text = self._generate_reply(post["text"], post["author"], post_topic)
+                if reply_text:
+                    # Pass the tweet URL to navigate directly — avoids stale element refs
+                    if self._reply_to_post(page, post["id"], post["text"], post["author"], reply_text, post["url"]):
+                        replied_count += 1
+                        self._engaged.add(post["id"])
+                        # Soul learning: record this reply
+                        try:
+                            from core.soul_engine import soul as _soul
+                            _soul.learn_from_x_reply(post["text"], reply_text, post["author"])
+                        except Exception:
+                            pass
+                    time.sleep(random.uniform(3, 5))
 
             # Save updated session
             try:
@@ -561,26 +893,60 @@ class XEngagement:
 
     def generate_shitpost(self, topic: Optional[str] = None) -> str:
         """Generate a hype/joke/crack tweet.
-        60 % of the time picks a topic the algorithm is actually pushing right now.
-        40 % falls back to the hardcoded SHITPOST_TOPICS roster.
+        Uses content pillar rotation to guarantee variety across categories.
+        Tracks recently used topics and actively avoids repeating them.
         """
+        self._last_shitpost_topic = None
+        chosen_pillar = ""
+
         if topic is None:
+            # Pull the full live topic web: feed topics + interest expansion + commands
+            try:
+                from core.soul_engine import soul as _soul
+                all_topics = _soul.get_dynamic_topics()
+            except Exception:
+                all_topics = []
+
+            used_slugs = self._recently_used_slugs()
+
+            # Split into fresh feed-learned vs. everything else
             learned = self._get_learned_topics()
-            if learned and random.random() < 0.60:
-                topic = random.choice(learned)
-                logger.debug(f"Shitpost using feed-learned topic: {topic}")
+            fresh_learned = [t for t in learned if t.lower()[:50] not in used_slugs]
+
+            # Fresh interest-web topics (not feed, not recently used)
+            fresh_web = [t for t in all_topics if t.lower()[:50] not in used_slugs
+                         and t not in learned][:30]
+
+            if fresh_learned and random.random() < 0.45:
+                # Feed-trending topic (most timely)
+                topic = random.choice(fresh_learned[:12])
+                chosen_pillar = "feed_learned"
+                logger.debug(f"Shitpost using fresh feed topic: {topic}")
+            elif fresh_web and random.random() < 0.55:
+                # Soul interest web (personalised expansion)
+                topic = random.choice(fresh_web[:20])
+                chosen_pillar = "interest_web"
+                logger.debug(f"Shitpost using interest web: {topic}")
             else:
-                # Check soul interests for topic selection
-                try:
-                    from core.soul_engine import soul as _soul
-                    interests = _soul.get_content_interests()
-                    if interests and random.random() < 0.40:
-                        topic = random.choice(interests[:10])
-                        logger.debug(f"Shitpost using soul interest topic: {topic}")
-                    else:
-                        topic = random.choice(SHITPOST_TOPICS)
-                except Exception:
-                    topic = random.choice(SHITPOST_TOPICS)
+                # Fall back to content pillar rotation
+                chosen_pillar = self._pick_next_pillar()
+                pool = PILLAR_TOPICS.get(chosen_pillar, SHITPOST_TOPICS)
+                fresh_pool = [t for t in pool if t.lower()[:50] not in used_slugs]
+                if not fresh_pool:
+                    fresh_pool = pool
+                topic = random.choice(fresh_pool)
+                logger.debug(f"Shitpost pillar={chosen_pillar} topic={topic}")
+
+        self._last_shitpost_topic = topic
+
+        # ── Fetch current grounded facts about this topic before writing ──────────
+        # This prevents the bot from tweeting stale or wrong info and getting trolled
+        topic_facts = self._fetch_topic_context(topic)
+
+        # Build what-was-recently-posted context so AI avoids those angles
+        recent = self._load_recent_topics()
+        recent_display = ", ".join(e["topic"] for e in recent[-6:]) if recent else "none"
+
         feed_ctx = self.get_feed_context_block()
         soul_ctx = ""
         try:
@@ -588,42 +954,43 @@ class XEngagement:
             soul_ctx = _soul.get_soul_context("twitter")
         except Exception:
             pass
+
         try:
             system = (
                 "You write viral tweets. Rules:\n"
                 "- max 260 chars\n"
                 "- lowercase only, extremely online gen-z energy\n"
                 "- NO personal info — no real names, locations, job, school, relationships\n"
-                "- 1-2 hashtags that real people actually search (e.g. #Valorant #VCT #TenZ #Cricket #Kohli #F1 #AI #Coding #IndianTwitter #Memes) — put them at the END\n"
+                "- 1-2 hashtags that real people actually search — put them at the END\n"
                 "- VARY the format: hype tweets, crack jokes, memes, hot takes, shower thoughts, "
-                "absurd observations, relatable dev/tech humor, stan energy, chaotic takes\n"
-                "- Valorant: deep knowledge — TenZ/Sentinels/Zekken/Sacy are home team. fns = best IGL, "
-                "boaster = chaotic energy king, tarik = content goat, shanks/yay/nAts/aspas/Derke/Demon1 "
-                "all deserve flowers. Know teams: LOUD/Fnatic/NRG/Liquid/PRX/Karmine. "
-                "Can post about any of them — don't milk only TenZ. Cover the whole scene.\n"
-                "- For any loved player/team: glorify skill, clutch moments, legacy, hype them up. Never mock them.\n"
-                "- For tech/AI/coding/internet topics: funny, observational, relatable, or unhinged\n"
-                "- For trending/pop culture: hot take or funny reaction\n"
-                "- Crack jokes are welcome. Dark-ish humor OK if not targeting real people\n"
-                "- voice: bangalore software engineer who is a massive esports/sports nerd, extremely online\n"
+                "absurd observations, relatable humor, stan energy, chaotic takes, unpopular opinions\n"
+                "- For any beloved player/team: glorify skill, clutch moments, legacy. Never mock them.\n"
                 "- must feel like a real person tweeting at 1am, not a brand or bot\n"
-                "- punchy, specific, quotable — make it feel like something real people would retweet"
-                + (f"\n\n{feed_ctx}" if feed_ctx else "")
-                + (f"\n\n{soul_ctx}" if soul_ctx else "")
+                "- punchy, specific, quotable — something people actually retweet\n"
+                "- VARY your openers — do NOT start with 'nah' or 'bro' every tweet. "
+                "Use different entry points: the topic itself, a number, a reaction word, a question, "
+                "an observation, a comparison, absurdist imagery, etc.\n"
+                f"\n⚠ RECENTLY POSTED ABOUT (DO NOT repeat these angles or topics):\n  {recent_display}\n"
+                "  Write something genuinely different — new angle, different aspect, fresh take.\n"
+                + (f"\n{topic_facts}\n" if topic_facts else "")
+                + (f"\n{feed_ctx}" if feed_ctx else "")
+                + (f"\n{soul_ctx}" if soul_ctx else "")
             )
             prompt = (
                 f"Write ONE tweet about: {topic}\n"
-                "Output ONLY the tweet text. No options, no numbering, no labels, no quotes. "
-                "Just the raw tweet."
+                "Pick a format you haven't used recently. Be specific, not generic.\n"
+                "Output ONLY the raw tweet text. No labels, no quotes."
             )
-            tweet = ken_ai._call(system, prompt, model="claude-haiku-4-5", max_tokens=100, use_cache=False)
-            # Strip any accidental labeling (e.g. "Option 1:", "Tweet:", quotes)
+            tweet = ken_ai._call(system, prompt, model="claude-haiku-4-5", max_tokens=110, use_cache=False)
             import re as _re
             tweet = _re.sub(r'^(option\s*\d+[:\-]?\s*|tweet[:\-]?\s*)', '', tweet.strip(), flags=_re.IGNORECASE)
             tweet = tweet.strip('"\' \n')
+            # Mark pillar used (so next call rotates away from it)
+            self._mark_topic_used(topic, chosen_pillar)
             return tweet[:260]
         except Exception:
             tmpl = random.choice(SHITPOST_TEMPLATES)
+            self._mark_topic_used(topic, chosen_pillar)
             return tmpl.format(topic=topic)
 
     def post_shitpost(self, topic: Optional[str] = None) -> Optional[str]:
@@ -633,7 +1000,68 @@ class XEngagement:
         if not tweet:
             return None
         logger.info(f"Posting hype tweet: {tweet[:80]}")
-        return twitter.post_tweet(tweet)
+        result = twitter.post_tweet(tweet)
+        # Mark the topic used so next post avoids it
+        if result and hasattr(self, '_last_shitpost_topic') and self._last_shitpost_topic:
+            self._mark_topic_used(self._last_shitpost_topic)
+        return result
+
+    # ── Topic variety tracking ────────────────────────────────────────────────
+
+    def _load_recent_topics(self) -> list[dict]:
+        """Load recently used post topics (list of {slug, ts, pillar})."""
+        try:
+            raw = memory.get(RECENT_TOPICS_KEY, "[]")
+            return json.loads(raw)
+        except Exception:
+            return []
+
+    def _mark_topic_used(self, topic: str, pillar: str = "") -> None:
+        """Record a topic as used. Keeps rolling window of RECENT_TOPICS_MAX entries."""
+        recent = self._load_recent_topics()
+        recent.append({
+            "slug":   topic.lower()[:50],
+            "topic":  topic,
+            "pillar": pillar,
+            "ts":     datetime.utcnow().isoformat(),
+        })
+        recent = recent[-RECENT_TOPICS_MAX:]
+        memory.set(RECENT_TOPICS_KEY, json.dumps(recent))
+
+    def _recently_used_slugs(self) -> set[str]:
+        """Return set of topic slugs used in the last TOPIC_COOLDOWN_POSTS posts."""
+        recent = self._load_recent_topics()
+        window = recent[-TOPIC_COOLDOWN_POSTS:]
+        return {e["slug"] for e in window}
+
+    def _last_used_pillar(self) -> str:
+        """Return the pillar used most recently (to avoid repeating it)."""
+        recent = self._load_recent_topics()
+        for entry in reversed(recent):
+            if entry.get("pillar"):
+                return entry["pillar"]
+        return ""
+
+    def _pick_next_pillar(self) -> str:
+        """
+        Pick the content pillar that has been used LEAST recently,
+        or least frequently — guarantees variety across categories.
+        """
+        recent = self._load_recent_topics()
+        # Count how recently each pillar was used (lower index = more recent)
+        recency: dict[str, int] = {p: 999 for p in CONTENT_PILLARS}
+        for i, entry in enumerate(reversed(recent[-20:])):
+            p = entry.get("pillar", "")
+            if p in recency and recency[p] == 999:
+                recency[p] = i  # lower = more recent
+        # Pick pillar with highest recency score (least recently used)
+        last = self._last_used_pillar()
+        candidates = sorted(CONTENT_PILLARS, key=lambda p: recency[p], reverse=True)
+        # Never pick the same pillar twice in a row
+        for p in candidates:
+            if p != last:
+                return p
+        return candidates[0]
 
 
 # Singleton

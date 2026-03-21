@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 import pickle
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -129,7 +129,9 @@ class YouTubeUploader:
             logger.error(f"Video file not found: {video_path}")
             return None
 
-        h = fingerprint(title + video_path)
+        # Dedup key is title + upload-date so the same title can be
+        # re-uploaded on a different day (e.g. regenerated content).
+        h = fingerprint(title + str(date.today()))
         if memory.already_posted(h):
             logger.info(f"Video already uploaded (dedup): {title}")
             return None

@@ -46,13 +46,15 @@ _X_REPLIES_KEY      = "soul_x_replies_done"      # posts bot replied to on X
 _COMMANDS_KEY       = "soul_self_commands"        # explicit "post about X" commands
 _YT_TOPICS_KEY      = "soul_yt_topics_made"      # YT Short topics created
 _DISTILL_COUNT_KEY  = "soul_distill_count"        # how many signals since last distill
+_INTEREST_WEB_KEY   = "soul_interest_web"         # expanded topic web from facts + preferences
 
-# ── Tuning ──────────────────────────────────────────────────────
+# ── Tuning ───────────────────────────────────────────────
 _DISTILL_EVERY   = 15   # re-distil full profile every N new signals
 _X_LIKED_MAX     = 60   # rolling window of X liked posts to keep
 _COMMANDS_MAX    = 40   # rolling window of commands to keep
 _YT_TOPICS_MAX   = 30   # rolling window of YT topics to keep
 _X_REPLIES_MAX   = 40   # rolling window of X replies to keep
+_INTEREST_WEB_MAX = 80  # max interest web topics to store
 
 
 class SoulEngine:
@@ -178,56 +180,226 @@ class SoulEngine:
             feed_block = ", ".join(feed_topics[:15]) if feed_topics else "none yet"
 
             prompt = f"""
-Based on ALL of the following signals about this person, build a rich personality profile
-that captures who he is, what he cares about, how he communicates, what he finds funny,
-what he engages with, and what topics energise him.
+You're building a living personality profile for an AI that posts on X (Twitter) AS this person.
+Be hyper-specific. Vague profiles produce bot-like tweets. Specific profiles produce human tweets.
+All signals below come from his real online activity.
 
-TEXTING STYLE (from WhatsApp messages he sent):
+TEXTING STYLE (from WhatsApp messages):
 {style or "not enough data yet"}
 
-SOCIAL WORLD (from his WhatsApp conversations):
+SOCIAL WORLD (WhatsApp conversation topics/energy):
 {convo_ctx or "not enough data yet"}
 
-KNOWN FACTS ABOUT HIM (public-safe only):
+KNOWN FACTS (public-safe only):
 {facts_block or "none yet"}
 
-POSTS HE LIKED ON X (his taste/interests):
+POSTS HE LIKED ON X — his actual taste:
 {liked_block}
 
-REPLIES HE MADE ON X (how he engages publicly):
+REPLIES HE MADE ON X — how he actually talks online:
 {reply_block}
 
-SELF-COMMANDS (what topics he explicitly asked to post about):
+SELF-COMMANDS (what he explicitly asked to post about):
 {cmd_block}
 
-YOUTUBE SHORTS HE CREATED (content taste):
+YOUTUBE SHORTS HE MADE (content taste):
 {yt_block}
 
-WHAT'S TRENDING IN HIS FOR YOU FEED:
+FOR YOU FEED TOPICS (what the algorithm feeds him):
 {feed_block}
 
-Write a personality profile in 10-15 bullet points. Cover:
-- Voice and texting patterns (vocabulary, energy, humour style)
-- Interest hierarchy (his top 5 passions/topics)
-- How he reacts to things he likes vs things he disagrees with
-- Banter/roast style (what's fair game, what's not)
-- What kind of content makes him engage (funny, takes, hype, facts)
-- Any recurring patterns, references, or behaviours
-Keep it specific and evidence-based. Under 350 words.
-DO NOT include private data, real names of people he knows personally,
-relationships, his employer, location, or any sensitive information.
+Write a personality profile in 14-18 tight bullet points covering ALL of:
+
+1. VOCAB & CATCHPHRASES: specific words/phrases he uses. E.g. "bro", "actually cooked",
+   "lowkey", "fr fr", "i cannot", "the disrespect", "unironically", "certified". List actual examples.
+2. ENERGY LEVEL: how chaotic vs. measured. Does he go all-caps? Use ellipsis? Fragment sentences?
+3. HUMOUR ARCHETYPE: pick 1-2: absurdist | hyperbole king | self-roaster | hot-take merchant |
+   dry deadpan | chronically online | pure chaos. Describe how it shows with an example.
+4. INTEREST HIERARCHY: rank his top 5-6 passion areas. For each: ONE sentence on HOW he engages.
+   E.g. "Valorant — full stan mode, glorifies his faves, reacts to clips like he's watching live"
+5. REPLY PATTERNS: how he reacts to (a) impressive clips, (b) bad takes, (c) relatable posts,
+   (d) something funny. Give a realistic example phrase for each.
+6. THINGS HE NEVER DOES: tweet styles that would feel completely out-of-character.
+7. ROAST STYLE: what's fair game (bad takes, situations, irony) vs hard limits.
+8. TWITTER PERSONA: one sentence archetype that captures the whole vibe.
+
+Evidence-based from signals above. Under 420 words.
+DO NOT include: private relationships, real names of people he knows, employer, location, phone.
 """
             profile = ken_ai._call(
-                "You are a personality analyst building a digital twin profile.",
+                "You are a personality analyst building a hyper-specific digital twin for Twitter.",
                 prompt,
                 model="claude-haiku-4-5-20251001",
-                max_tokens=450,
+                max_tokens=550,
                 use_cache=False,
             )
             memory.set(_SOUL_PROFILE_KEY, profile)
             logger.info(f"Soul profile distilled ({len(profile)} chars)")
+            # After every distillation, rebuild the interest web in the background
+            threading.Thread(target=self._expand_interest_web, daemon=True).start()
         except Exception as exc:
             logger.warning(f"Soul distillation failed: {exc}")
+
+    def _expand_interest_web(self) -> None:
+        """
+        Reads ALL facts + preferences + liked posts and asks AI to expand them
+        into a rich web of related topics the person would genuinely follow.
+
+        Example: "fav song = Waiting for the End by Linkin Park"
+          → topics: "Linkin Park", "Chester Bennington", "Mike Shinoda",
+                    "nu-metal", "Hybrid Theory era", "Minutes to Midnight"
+
+        Example: "supports Man City"
+          → topics: "Man City", "Pep Guardiola", "Erling Haaland",
+                    "Premier League title race", "Etihad Stadium"
+
+        The expanded web is stored and used by get_dynamic_topics() and
+        generate_shitpost() so the bot naturally engages with posts about
+        Linkin Park / Chester Bennington / Man City etc. without being told.
+        """
+        try:
+            from core.ai_engine import ken_ai
+
+            # Gather seed signals
+            from memory.facts_store import facts_store
+            global_facts = facts_store.get_global(limit=30)
+            facts_block = "\n".join(f"- {f['fact_text']}" for f in global_facts) if global_facts else ""
+
+            liked = self._load(_X_LIKES_KEY)
+            liked_sample = "\n".join(f"- {e['text'][:100]}" for e in liked[-15:]) if liked else ""
+
+            commands = self._load(_COMMANDS_KEY)
+            cmd_sample = ", ".join(e["cmd"] for e in commands[-10:]) if commands else ""
+
+            profile = memory.get(_SOUL_PROFILE_KEY, "")[:600]
+
+            prompt = f"""
+You're building an INTEREST WEB for a Twitter bot that must engage authentically.
+
+KNOWN FACTS & PREFERENCES:
+{facts_block or "none yet"}
+
+SELF-COMMANDS (topics he explicitly cares about):
+{cmd_sample or "none yet"}
+
+POSTS HE LIKED RECENTLY (what catches his eye):
+{liked_sample or "none yet"}
+
+PERSONALITY SNAPSHOT:
+{profile or "not yet distilled"}
+
+TASK: For EACH preference/fact you find, expand it into 3-6 RELATED topics/people/events
+he would naturally follow and engage with on Twitter.
+
+Examples of good expansion:
+- "Waiting for the End by Linkin Park" → Linkin Park, Chester Bennington, Mike Shinoda,
+  nu-metal playlist, Hybrid Theory, Minutes to Midnight, Post Traumatic album
+- "Man City fan" → Man City, Pep Guardiola, Erling Haaland, Kevin De Bruyne,
+  Premier League title race, Etihad Stadium, Man City vs Arsenal
+- "Sentinels fan" → Sentinels, TenZ, Zekken, Sacy, fns IGL, Shahzam, VCT Americas
+- "likes RCB" → RCB, Virat Kohli, IPL 2026, Royal Challengers Bangalore, Faf du Plessis
+
+Return ONLY a JSON array of strings — ALL the expanded topics (60-80 total).
+Each string is a short topic/person/entity (max 5 words). Deduplicated.
+Prioritise specificity over generality. Include bands, players, teams, albums,
+characters, events — anything he'd see in a feed and want to react to.
+"""
+            raw = ken_ai._call(
+                "You are a fan-profile analyst building a personalised interest web.",
+                prompt,
+                model="claude-haiku-4-5-20251001",
+                max_tokens=700,
+                use_cache=False,
+            )
+            raw = raw.strip()
+            if raw.startswith("```"):
+                raw = "\n".join(raw.split("\n")[1:]).rstrip("`").strip()
+            topics: list[str] = [str(t).strip() for t in json.loads(raw) if t][:_INTEREST_WEB_MAX]
+            memory.set(_INTEREST_WEB_KEY, json.dumps(topics))
+            logger.info(f"Interest web expanded: {len(topics)} topics (sample: {topics[:6]})")
+        except Exception as exc:
+            logger.warning(f"Interest web expansion failed: {exc}")
+
+    def build_topic_context(self, topic: str) -> str:
+        """
+        Returns a short block of CURRENT GROUNDED FACTS about a topic,
+        synthesised from what the bot knows (profile, interest web, liked posts).
+        Injected into tweet/reply prompts so the bot never posts stale or wrong info.
+
+        Example for 'Man City':
+          "Current facts: Man City are 2nd in Prem (as of Mar 2026), Haaland top scorer,
+           Pep in his last year, rival Arsenal 3pts ahead."
+
+        Example for 'Linkin Park':
+          "Current facts: Chester Bennington died 2017; band returned with Emily Armstrong
+           2024; new album From Zero released Nov 2024; Mike Shinoda still active."
+        """
+        try:
+            from core.ai_engine import ken_ai
+
+            # Pull in what the bot already knows about this topic
+            profile = memory.get(_SOUL_PROFILE_KEY, "")[:400]
+            interest_web_raw = memory.get(_INTEREST_WEB_KEY, "[]")
+            interest_web: list[str] = json.loads(interest_web_raw) if interest_web_raw else []
+
+            # Find any liked posts or replies mentioning this topic
+            liked = self._load(_X_LIKES_KEY)
+            related_liked = [
+                e["text"][:100] for e in liked[-30:]
+                if topic.lower()[:12] in e.get("text", "").lower()
+            ][:5]
+            # First: check if any recently liked/feed posts mention this topic —
+            # those are the freshest ground truth we have
+            feed_topics_raw: list[str] = self._load_list("x_learned_feed_topics")
+            feed_mention = next((f for f in feed_topics_raw if topic.lower()[:10] in f.lower()), "")
+            liked_context = "\n".join(f"- {t}" for t in related_liked) if related_liked else ""
+
+            prompt = f"""
+Topic: "{topic}"
+
+What the bot recently saw about this topic in its feed:
+{liked_context or feed_mention or "nothing specific yet"}
+
+Task: Give 3-5 SHORT FACTUAL POINTS to help write an accurate tweet/reply about "{topic}".
+
+SPLIT your response into two sections:
+
+[BACKGROUND] — things you know confidently (history, members, playing style, key facts, reputation):
+  → Always fill this section. E.g. "Linkin Park: Chester Bennington died 2017, Emily Armstrong new vocalist 2024, known for nu-metal + Hybrid Theory era"
+  → E.g. "Man City: Pep Guardiola managed since 2016, known for possession football, Haaland striker, multiple EPL titles"
+
+[LIVE/CURRENT] — current season standings, recent match results, chart positions (you may not have this):
+  → Omit bullets you're genuinely unsure about
+  → Only include if confident
+
+Rules:
+- max 10 words per bullet
+- be specific (players, albums, era — not generic)
+- Return only the bullets under each section header. No intro text.
+"""
+            facts = ken_ai._call(
+                "You are a concise fact-checker for a social media bot. Only state what you know confidently.",
+                prompt,
+                model="claude-haiku-4-5-20251001",
+                max_tokens=220,
+                use_cache=False,
+            )
+            facts_text = facts.strip()
+            # Only fully hedge if AI gave truly nothing useful
+            useless = (
+                len(facts_text) < 40
+                or ("don't have access" in facts_text.lower() and "[background]" not in facts_text.lower())
+                or ("cannot provide" in facts_text.lower() and "[background]" not in facts_text.lower())
+            )
+            if useless:
+                return (
+                    f"⚠ FACT HEDGE FOR {topic}: React to the post's energy/sentiment. "
+                    f"Match their excitement or commiserate — don't assert specific facts you don't know."
+                )
+            return f"GROUNDING CONTEXT for {topic} (use as background — don't state these explicitly):\n{facts_text}"
+        except Exception as exc:
+            logger.debug(f"build_topic_context failed for {topic}: {exc}")
+            return ""
 
     # ════════════════════════════════════════════════════════════
     #  READ — produce context for AI prompts
@@ -319,6 +491,66 @@ relationships, his employer, location, or any sensitive information.
                 interests.append(item)
 
         return interests[:20]
+
+    def get_dynamic_topics(self) -> list[str]:
+        """
+        Returns the FULL live topic list the bot should post/engage about.
+        Merges (in priority order):
+          1. Expanded interest web (AI-derived from facts — Linkin Park, Man City etc.)
+          2. Feed-learned topics (what's trending NOW in the For You feed)
+          3. Self-commanded topics
+          4. Recent liked post extracts
+        This is used by generate_shitpost() for topic selection — it grows over time
+        as new facts and interactions are recorded.
+        """
+        # 1. Expanded interest web (facts-derived)
+        try:
+            web_raw = memory.get(_INTEREST_WEB_KEY, "[]")
+            web: list[str] = json.loads(web_raw) if web_raw else []
+        except Exception:
+            web = []
+
+        # 2. Feed-learned (trending right now)
+        feed = self._load_list("x_learned_feed_topics")[:15]
+
+        # 3. Commands
+        commands = self._load(_COMMANDS_KEY)
+        cmd_topics = [e["cmd"] for e in commands[-8:]]
+
+        # 4. Liked snippets
+        liked = self._load(_X_LIKES_KEY)
+        liked_raw = [e["text"][:50] for e in liked[-8:]]
+
+        # Merge — feed topics first (freshest), then web (richest), then rest
+        merged: list[str] = []
+        seen: set[str] = set()
+        for item in feed + web + cmd_topics + liked_raw:
+            key = item.lower().strip()[:35]
+            if key and key not in seen:
+                seen.add(key)
+                merged.append(item)
+
+        return merged[:100]  # return up to 100 live topics
+
+    def get_voice_context(self) -> str:
+        """
+        Returns ONLY the distilled voice/style/personality for the reply generator.
+        Formatted as actionable writing instructions, not a biography.
+        NO topic signals — post topic drives reply content, not this.
+        """
+        profile = memory.get(_SOUL_PROFILE_KEY, "")
+        if not profile:
+            return (
+                "Young bangalore software engineer, massive esports + sports nerd.\n"
+                "Slang (rotate — don't repeat same word twice in a row): fr, lowkey, actually cooked, i cannot, the disrespect, unironically, okay but, wait, genuinely, actually, lmaooo, literally.\n"
+                "Humour: absurdist hot takes, hyperbole, chronically online energy.\n"
+                "Lowercase always. Fragment sentences. Short punchy reactions."
+            )
+        return (
+            "═══ THIS PERSON'S VOICE (write exactly like this) ═══\n"
+            + profile
+            + "\n\nNever reveal private data, real personal names, relationships, or location."
+        )
 
     def get_roast_style(self) -> str:
         """Returns the current roast/banter style descriptor."""

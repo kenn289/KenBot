@@ -4,9 +4,6 @@
  *
  * Behaviour rules:
  *  â€¢ DMs â†’ always reply
- *  â€¢ REAL GROUPS (exact 3) â†’ always reply + proactive shitposting every ~2h
- *  â€¢ All other groups â†’ ONLY reply when Ken's contact is explicitly @mentioned
- *                       (NOT @all, NOT @everyone â€” must be a real tag on Ken)
  *  â€¢ Reminders â†’ send to self on schedule
  */
 
@@ -24,12 +21,8 @@ const cron = require("node-cron");
 const FLASK_BASE = `http://localhost:${process.env.FLASK_PORT || 5050}`;
 const MY_NUMBER  = (process.env.MY_WHATSAPP_NUMBER || "").trim();
 
-// Exact real group names (lowercase for matching)
-const REAL_GROUP_NAMES = [
-  "jaatre bois",
-  "bengaluru big ball beasts\uD83D\uDC7E\uD83D\uDC7E",
-  "somalian day care center",
-];
+// Groups — bot is silent in ALL groups (DM only mode)
+const REAL_GROUP_NAMES = [];
 
 // Cache of { lowerName -> chatObject } for proactive messaging
 const realGroupChats = {};
@@ -72,13 +65,10 @@ client.on("disconnected", (reason) => {
 
 client.on("ready", () => {
   console.log("Ken WhatsApp bot is live!\n");
-  // Start pollers immediately — don't block on group caching
+  // Start pollers immediately — start all pollers
   startReminderPoller();
   startNotifyPoller();
-  startShitpostCron();
   startSummaryCron();
-  // Cache real groups in background with retries (WA needs a few seconds to fully load chats)
-  cacheRealGroupsWithRetry();
 });
 
 // ── Cache real group chat objects for proactive use ──────────
@@ -211,9 +201,8 @@ async function handleMessage(msg) {
 
   if (!body) return;
 
-  // ── Group gate: only respond in the 3 real groups; DMs are always open ──
-  // If someone mentions Ken in any other group chat → stay completely silent.
-  if (isGroup && !REAL_GROUP_NAMES.some(g => groupNameLower.includes(g))) return;
+  // ── Group gate: bot is SILENT in ALL groups — DMs only ──
+  if (isGroup) return;
 
   // ── Public: "hey ken fun fact: ..." — anyone can share a fact about Kenneth ──
   const funFactMatch = body.match(/^hey\s*ken\s+(?:fun\s*fact|i\s+have\s+a\s+fun\s+fact|u\s+should\s+know)[:\s]+(.+)/i);
@@ -368,34 +357,8 @@ async function handleMessage(msg) {
     return;
   }
 
-  const isRealGroup = REAL_GROUP_NAMES.some((g) => groupNameLower.includes(g));
-
-  if (isRealGroup) {
-    // Real group: only reply if name is mentioned or @tagged
-    const mentions = (await msg.getMentions?.()) || [];
-    const taggedMe = mentions.some((c) => c.isMe);
-    const namedMe  = /\bken(ny)?\b/i.test(body);
-
-    if (taggedMe) {
-      // Explicit @mention — gateway intro
-      await gatewayAndReply(msg, body, senderName, groupNameRaw, true);
-    } else if (namedMe) {
-      // Name-dropped in group — just reply normally, no public intro
-      logToInbox(senderName, groupNameRaw, body, msg.from);
-      await replyWithKen(msg, body, senderName, groupNameRaw, false);
-    }
-  } else {
-    // Other groups: only if Ken's contact is EXPLICITLY @mentioned
-    // getMentions() returns individual contacts — isMe is true only for Ken
-    // This correctly excludes @all/@everyone tags
-    const mentions = (await msg.getMentions?.()) || [];
-    const taggedMe = mentions.some((c) => c.isMe);
-
-    if (taggedMe) {
-      await gatewayAndReply(msg, body, senderName, groupNameRaw, true);
-    }
-    // else: Ken is silent. No butt-ins.
-  }
+  // Groups are already blocked above — only DMs reach here
+  await gatewayAndReply(msg, body, senderName, "");
 }
 
 // â”€â”€ AI reply via Flask â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

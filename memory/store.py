@@ -6,6 +6,7 @@ Stores: conversations, posted content hashes (dedup), reminders, tasks.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -19,8 +20,12 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 class MemoryStore:
     def __init__(self) -> None:
-        self._db = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+        self._lock = threading.Lock()
+        self._db = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=30)
         self._db.row_factory = sqlite3.Row
+        # WAL mode allows concurrent reads while a write is in progress
+        self._db.execute("PRAGMA journal_mode=WAL")
+        self._db.execute("PRAGMA synchronous=NORMAL")
         self._init_tables()
 
     def _init_tables(self) -> None:
@@ -66,24 +71,25 @@ class MemoryStore:
 
     # ── Chat History ──────────────────────────────────────
     def add_message(self, channel: str, chat_id: str, role: str, message: str) -> None:
-        self._db.execute(
-            "INSERT INTO chat_history (channel, chat_id, role, message, created_at) VALUES (?,?,?,?,?)",
-            (channel, chat_id, role, message, datetime.utcnow().isoformat()),
-        )
-        self._db.commit()
-        # Keep only last 40 rows per chat
-        self._db.execute(
-            """
-            DELETE FROM chat_history WHERE id IN (
-                SELECT id FROM chat_history
-                WHERE channel=? AND chat_id=?
-                ORDER BY id DESC
-                LIMIT -1 OFFSET 40
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO chat_history (channel, chat_id, role, message, created_at) VALUES (?,?,?,?,?)",
+                (channel, chat_id, role, message, datetime.utcnow().isoformat()),
             )
-            """,
-            (channel, chat_id),
-        )
-        self._db.commit()
+            self._db.commit()
+            # Keep only last 40 rows per chat
+            self._db.execute(
+                """
+                DELETE FROM chat_history WHERE id IN (
+                    SELECT id FROM chat_history
+                    WHERE channel=? AND chat_id=?
+                    ORDER BY id DESC
+                    LIMIT -1 OFFSET 40
+                )
+                """,
+                (channel, chat_id),
+            )
+            self._db.commit()
 
     def get_context(self, channel: str, chat_id: str, last_n: int = 10) -> str:
         """Returns last N messages as a formatted string for AI context."""
@@ -106,19 +112,21 @@ class MemoryStore:
         return row is not None
 
     def mark_posted(self, content_hash: str, platform: str, content: str, post_id: str = "") -> None:
-        self._db.execute(
-            "INSERT OR IGNORE INTO posted_content VALUES (?,?,?,?,?)",
-            (content_hash, platform, content[:500], post_id, datetime.utcnow().isoformat()),
-        )
-        self._db.commit()
+        with self._lock:
+            self._db.execute(
+                "INSERT OR IGNORE INTO posted_content VALUES (?,?,?,?,?)",
+                (content_hash, platform, content[:500], post_id, datetime.utcnow().isoformat()),
+            )
+            self._db.commit()
 
     # ── Reminders ─────────────────────────────────────────
     def add_reminder(self, task: str, due_at: datetime) -> int:
-        cursor = self._db.execute(
-            "INSERT INTO reminders (task, due_at, created_at) VALUES (?,?,?)",
-            (task, due_at.isoformat(), datetime.utcnow().isoformat()),
-        )
-        self._db.commit()
+        with self._lock:
+            cursor = self._db.execute(
+                "INSERT INTO reminders (task, due_at, created_at) VALUES (?,?,?)",
+                (task, due_at.isoformat(), datetime.utcnow().isoformat()),
+            )
+            self._db.commit()
         logger.info(f"Reminder added: '{task}' due {due_at}")
         return cursor.lastrowid  # type: ignore
 
@@ -131,16 +139,18 @@ class MemoryStore:
         return [dict(r) for r in rows]
 
     def mark_reminder_sent(self, reminder_id: int) -> None:
-        self._db.execute("UPDATE reminders SET sent=1 WHERE id=?", (reminder_id,))
-        self._db.commit()
+        with self._lock:
+            self._db.execute("UPDATE reminders SET sent=1 WHERE id=?", (reminder_id,))
+            self._db.commit()
 
     # ── KV Store ──────────────────────────────────────────
     def set(self, key: str, value: str) -> None:
-        self._db.execute(
-            "INSERT OR REPLACE INTO kv_store VALUES (?,?,?)",
-            (key, value, datetime.utcnow().isoformat()),
-        )
-        self._db.commit()
+        with self._lock:
+            self._db.execute(
+                "INSERT OR REPLACE INTO kv_store VALUES (?,?,?)",
+                (key, str(value), datetime.utcnow().isoformat()),
+            )
+            self._db.commit()
 
     def get(self, key: str, default: str = "") -> str:
         row = self._db.execute("SELECT value FROM kv_store WHERE key=?", (key,)).fetchone()
