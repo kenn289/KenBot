@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     notion_client_id: str = Field("", env="NOTION_CLIENT_ID")
     notion_client_secret: str = Field("", env="NOTION_CLIENT_SECRET")
 
+    # ── Reddit ─────────────────────────────────────
+    reddit_client_id: str = Field("", env="REDDIT_CLIENT_ID")
+    reddit_client_secret: str = Field("", env="REDDIT_CLIENT_SECRET")
+    reddit_username: str = Field("", env="REDDIT_USERNAME")
+    reddit_password: str = Field("", env="REDDIT_PASSWORD")
+    reddit_user_agent: str = Field("KenBot/1.0 by Kenneth", env="REDDIT_USER_AGENT")
+    reddit_auto_enabled: bool = Field(True, env="REDDIT_AUTO_ENABLED")
+
     # ── App ────────────────────────────────────────
     flask_port: int = Field(5050, env="FLASK_PORT")
     my_whatsapp_number: str = Field("", env="MY_WHATSAPP_NUMBER")

@@ -79,6 +79,7 @@ class InfluencerReplyEngine:
         Generate a genuine Ken-voice reply to a viral tweet using Claude + live context.
         """
         try:
+            import re as _re
             from core.ai_engine import ken_ai
             from core.news_fetcher import news_fetcher as _nf
             from config.ken_personality import IDENTITY
@@ -110,6 +111,10 @@ class InfluencerReplyEngine:
             at = f"@{author} " if author else ""
             prompt = f"Original tweet: {at}{tweet_text}\n\nWrite your reply:"
             reply = ken_ai._call(system, prompt, model="claude-haiku-4-5", max_tokens=80, use_cache=False)
+            reply = reply.strip().strip('"\'')
+            reply = _re.sub(r'(?im)^\s*(original tweet:|write your reply:|best reply.*:|reply:)\s*', '', reply)
+            reply = _re.sub(r'(?is)^\s*@?[\w_]+\s*\n\s*', '', reply).strip() if reply.lower().startswith("original tweet:") else reply
+            reply = _re.sub(r'\n{2,}', '\n', reply).strip()
             # Prepend @handle for context but keep it short
             if author and not reply.lower().startswith(f"@{author.lower()}"):
                 reply = f"@{author} {reply}"

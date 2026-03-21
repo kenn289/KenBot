@@ -21,6 +21,37 @@ KenBot OS is not a chatbot. It's an autonomous digital brain that:
 
 ---
 
+## Share-Safe Checklist (before pushing to GitHub)
+
+Use this every time before a public push.
+
+1. Keep secrets local-only:
+   - `.env` must stay local (never commit)
+   - keep OAuth/session files local in `credentials/`
+2. Verify git only contains code/config templates:
+
+```bash
+git status
+git ls-files .env credentials/* memory/*.db* media/youtube/*
+```
+
+`git ls-files` should NOT return local secret/session/db artifacts.
+
+3. If any local artifact is tracked, untrack it (keep local file):
+
+```bash
+git rm --cached .env
+git rm --cached -r credentials media/youtube
+git rm --cached memory/*.db* || true
+git add .gitignore
+```
+
+4. If secrets were ever committed in the past, rotate keys immediately:
+   - Anthropic/OpenAI/Gemini/Twitter/Reddit/Google/Notion/Tavily
+   - then rewrite git history before making repo public.
+
+---
+
 ## Feature Overview
 
 | Module | What it does |

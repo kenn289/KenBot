@@ -28,6 +28,7 @@ from core.health_monitor import health_monitor
 from utils.logger import logger
 
 TZ = pytz.timezone(settings.timezone)
+_REDDIT_MIN_GAP_SECONDS = 60 * 50  # don't run auto reddit again within 50 mins
 
 
 class ContentScheduler:
@@ -112,6 +113,18 @@ class ContentScheduler:
                 name=f"ReplySniper {hour}:05",
                 replace_existing=True,
                 misfire_grace_time=600,
+            )
+
+        # ── Reddit auto interaction every 2 hours, staggered from X jobs ──
+        # Runs at :55 to avoid heavy X windows (:00/:10/:20/:40 and :05 sniper).
+        for hour in range(9, 24, 2):
+            self.scheduler.add_job(
+                func=self._run_reddit_auto,
+                trigger=CronTrigger(hour=hour, minute=55, timezone=TZ),
+                id=f"reddit_auto_{hour:02d}",
+                name=f"RedditAuto {hour}:55",
+                replace_existing=True,
+                misfire_grace_time=900,
             )
 
         # ── YouTube: 4 drafts/day ───────────────────────────────────────────
@@ -285,6 +298,31 @@ class ContentScheduler:
             logger.info(f"Engagement done — liked: {result.get('liked',0)}, replied: {result.get('replied',0)}")
         except Exception as exc:
             logger.error(f"Engagement job failed: {exc}")
+
+    def _run_reddit_auto(self) -> None:
+        logger.info("⏰ Reddit auto interaction running…")
+        try:
+            from growth.reddit_engine import reddit_engine
+            from memory.store import memory
+            import time as _time
+
+            now_ts = int(_time.time())
+            last_ts = int(memory.get("reddit_auto_last_run_ts", "0") or "0")
+            if last_ts and (now_ts - last_ts) < _REDDIT_MIN_GAP_SECONDS:
+                logger.info("Reddit auto skipped: cooldown active (%ss since last run)", now_ts - last_ts)
+                return
+
+            # Keep cycle lightweight to distribute work steadily across day.
+            result = reddit_engine.run_auto_interaction(max_comments=1)
+            memory.set("reddit_auto_last_run_ts", str(now_ts))
+            logger.info(
+                "Reddit auto done — attempted: %s, posted: %s, skipped: %s",
+                result.get("attempted", 0),
+                result.get("posted", 0),
+                result.get("skipped", 0),
+            )
+        except Exception as exc:
+            logger.error(f"Reddit auto job failed: {exc}")
 
     def _post_shitpost(self) -> None:
         logger.info("⏰ Shitpost job running…")

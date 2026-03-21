@@ -152,9 +152,9 @@ class TrendScanner:
         seeds = [
             {"topic": "TenZ Sentinels Valorant highlights", "keywords": ["tenz", "sentinels", "valorant"],
              "virality_score": 70, "trend_velocity": 6, "sentiment": "positive", "source": "contextual"},
-            {"topic": "fns IGL callouts strategy Valorant", "keywords": ["fns", "igl", "valorant", "nrg"],
+            {"topic": "fns Valorant watchparty takes", "keywords": ["fns", "stream", "valorant", "watchparty"],
              "virality_score": 65, "trend_velocity": 5, "sentiment": "positive", "source": "contextual"},
-            {"topic": "boaster Karmine Corp VCT", "keywords": ["boaster", "karmine", "vct"],
+            {"topic": "boaster VCT comms moments", "keywords": ["boaster", "vct", "fnatic"],
              "virality_score": 68, "trend_velocity": 6, "sentiment": "positive", "source": "contextual"},
             {"topic": "tarik streaming reacts Valorant", "keywords": ["tarik", "stream", "valorant"],
              "virality_score": 72, "trend_velocity": 6, "sentiment": "positive", "source": "contextual"},

@@ -635,9 +635,10 @@ class XEngagement:
         if any(k in t for k in ("valorant", "vct", "tenz", "sentinels", "zekken", "sacy", "fnatic valo",
                                  "boaster", "tarik", "nats", "aspas", "derke", "demon1", "esport")):
             return (
-                "\nVALORANT EXPERTISE: Deep knowledge — TenZ/Sentinels/Zekken/Sacy are home team. "
-                "fns = best IGL. boaster = chaotic king. tarik = content goat. "
-                "Know VCT Americas/EMEA/Pacific rosters, agent meta, patch notes. "
+                "\nVALORANT EXPERTISE: Deep knowledge — follows VCT Americas/EMEA/Pacific, "
+                "meta shifts, patch impact, roster moves, creator watchparty discourse. "
+                "Treat role/team/status as dynamic (pros retire, switch teams, move to streaming). "
+                "If uncertain, avoid hard claims and react to the post's current context. "
                 "React like a genuine stan with actual scene knowledge.\n"
             )
         if any(k in t for k in ("cricket", "ipl", "kohli", "rcb", "bcci", "ind ", "india cricket",
@@ -689,6 +690,12 @@ class XEngagement:
         # Fetch current grounded facts about this specific topic
         # so the reply never says something factually embarrassing
         topic_facts = self._fetch_topic_context(post_topic)
+        unified_ctx = ""
+        try:
+            from core.cross_platform_brain import cross_platform_brain as _brain
+            unified_ctx = _brain.build_unified_context(post_topic, platform="twitter_reply")
+        except Exception:
+            pass
 
         try:
             system = f"""You're ghostwriting a reply tweet for an extremely-online person.
@@ -697,6 +704,7 @@ THEIR VOICE (HOW to write — NOT what to write about):
 {voice_ctx if voice_ctx else 'young bangalore software engineer, massive esports/sports nerd, gen-z, always online'}
 {domain}
 {topic_facts}
+{unified_ctx}
 ══ THE ONLY RULE THAT MATTERS ══
 Reply to what this post is ACTUALLY about. Topic: {post_topic}.
 Never pivot to a different subject.
@@ -750,6 +758,16 @@ FORMAT:
             # Strip any wrapper the AI adds
             reply = reply.strip().strip('"\'')
             reply = _re.sub(r'^(reply[:\-]?\s*|option\s*\d+[:\-]?\s*)', '', reply, flags=_re.IGNORECASE)
+            reply = _re.sub(r'(?im)^\s*(post by\s*@[^\n:]*:|original tweet:|best reply.*:|write your reply:|reply:)\s*', '', reply)
+            reply = _re.sub(r'(?im)^\s*@[\w_]+\s*\n\s*post by\s*@', '@', reply)
+            reply = _re.split(r'(?i)\bor if you want\b', reply)[0]
+            reply = _re.split(r'(?i)\balternative\s*[:\-]?', reply)[0]
+            reply = _re.sub(r'\n{2,}', '\n', reply).strip()
+            try:
+                from core.cross_platform_brain import cross_platform_brain as _brain
+                reply = _brain.sanitize_social_text(reply, max_chars=200)
+            except Exception:
+                pass
             return reply.strip()[:200]
         except Exception as e:
             logger.debug(f"Reply gen failed: {e}")
@@ -874,6 +892,11 @@ FORMAT:
                         try:
                             from core.soul_engine import soul as _soul
                             _soul.learn_from_x_reply(post["text"], reply_text, post["author"])
+                        except Exception:
+                            pass
+                        try:
+                            from core.cross_platform_brain import cross_platform_brain as _brain
+                            _brain.record_topic("twitter", post_topic or post.get("topic", ""), source="x_reply")
                         except Exception:
                             pass
                     time.sleep(random.uniform(3, 5))

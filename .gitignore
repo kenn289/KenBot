@@ -10,6 +10,9 @@ credentials/*.json
 credentials/*.pickle
 credentials/*.p12
 credentials/*.pem
+credentials/*
+!credentials/README.md
+*session*.json
 *.bak
 
 # ─── Python ───────────────────────────────────────────────
@@ -56,12 +59,14 @@ logs/
 
 # ─── DB / Memory ──────────────────────────────────────────
 memory/*.db
+memory/*.db-*
 memory/*.sqlite
 memory/sessions/
 
 # ─── Media / temp ─────────────────────────────────────────
 media/temp/
 media/outbound/
+media/youtube/
 output/
 *.mp4
 *.mp3

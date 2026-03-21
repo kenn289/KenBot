@@ -47,14 +47,16 @@ _COMMANDS_KEY       = "soul_self_commands"        # explicit "post about X" comm
 _YT_TOPICS_KEY      = "soul_yt_topics_made"      # YT Short topics created
 _DISTILL_COUNT_KEY  = "soul_distill_count"        # how many signals since last distill
 _INTEREST_WEB_KEY   = "soul_interest_web"         # expanded topic web from facts + preferences
+_LAST_FAST_DISTILL_KEY = "soul_last_fast_distill_ts"
 
 # ── Tuning ───────────────────────────────────────────────
-_DISTILL_EVERY   = 15   # re-distil full profile every N new signals
+_DISTILL_EVERY   = 6    # faster persona convergence from multi-source signals
 _X_LIKED_MAX     = 60   # rolling window of X liked posts to keep
 _COMMANDS_MAX    = 40   # rolling window of commands to keep
 _YT_TOPICS_MAX   = 30   # rolling window of YT topics to keep
 _X_REPLIES_MAX   = 40   # rolling window of X replies to keep
 _INTEREST_WEB_MAX = 80  # max interest web topics to store
+_FAST_DISTILL_COOLDOWN_SECONDS = 120
 
 
 class SoulEngine:
@@ -137,6 +139,23 @@ class SoulEngine:
         if count % _DISTILL_EVERY == 0:
             # Run in background thread so it doesn't block the caller
             threading.Thread(target=self._distill_profile, daemon=True).start()
+
+    def trigger_fast_distill(self, reason: str = "") -> bool:
+        """
+        Trigger a best-effort profile distillation now with cooldown.
+        Used after major style/convo updates so mimic quality improves quickly.
+        """
+        try:
+            now_ts = int(datetime.utcnow().timestamp())
+            last_ts = int(memory.get(_LAST_FAST_DISTILL_KEY, "0") or "0")
+            if last_ts and (now_ts - last_ts) < _FAST_DISTILL_COOLDOWN_SECONDS:
+                return False
+            memory.set(_LAST_FAST_DISTILL_KEY, str(now_ts))
+            threading.Thread(target=self._distill_profile, daemon=True).start()
+            logger.info(f"Fast soul distill queued ({reason or 'manual'})")
+            return True
+        except Exception:
+            return False
 
     def _distill_profile(self) -> None:
         """
@@ -296,7 +315,7 @@ Examples of good expansion:
   nu-metal playlist, Hybrid Theory, Minutes to Midnight, Post Traumatic album
 - "Man City fan" → Man City, Pep Guardiola, Erling Haaland, Kevin De Bruyne,
   Premier League title race, Etihad Stadium, Man City vs Arsenal
-- "Sentinels fan" → Sentinels, TenZ, Zekken, Sacy, fns IGL, Shahzam, VCT Americas
+- "Sentinels fan" → Sentinels, TenZ, Zekken, Sacy, VCT Americas, watchparty creators, roster updates
 - "likes RCB" → RCB, Virat Kohli, IPL 2026, Royal Challengers Bangalore, Faf du Plessis
 
 Return ONLY a JSON array of strings — ALL the expanded topics (60-80 total).

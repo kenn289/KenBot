@@ -597,6 +597,44 @@ def reddit_opportunities():
     return jsonify({"opportunities": reddit_engine.get_posting_opportunities()}), 200
 
 
+@app.route("/api/reddit/status", methods=["GET"])
+def reddit_status():
+    configured = bool(
+        settings.reddit_client_id
+        and settings.reddit_client_secret
+        and settings.reddit_username
+        and settings.reddit_password
+    )
+    reddit_jobs = [
+        j for j in scheduler.list_jobs()
+        if str(j.get("id", "")).startswith("reddit_auto_")
+    ]
+    reddit_jobs = sorted(reddit_jobs, key=lambda x: str(x.get("id", "")))
+
+    return jsonify({
+        "configured": configured,
+        "auto_enabled": bool(settings.reddit_auto_enabled),
+        "username": settings.reddit_username if configured else "",
+        "schedule": {
+            "cadence": "every 2 hours",
+            "slot": ":55 IST",
+            "max_comments_per_cycle": 1,
+            "cooldown_minutes": 50,
+            "jobs": reddit_jobs,
+        },
+    }), 200
+
+
+@app.route("/api/reddit/auto-run", methods=["POST"])
+def reddit_auto_run():
+    data = request.get_json(force=True) or {}
+    max_comments = int(data.get("max_comments", 2))
+    max_comments = max(1, min(max_comments, 5))
+    from growth.reddit_engine import reddit_engine
+    result = reddit_engine.run_auto_interaction(max_comments=max_comments)
+    return jsonify({"ok": result.get("posted", 0) > 0, "result": result}), 200
+
+
 @app.route("/api/meme", methods=["POST"])
 def generate_meme():
     data = request.get_json(force=True) or {}

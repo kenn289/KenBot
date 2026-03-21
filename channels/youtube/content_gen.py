@@ -10,6 +10,7 @@ import os
 import random
 import subprocess
 import textwrap
+import re
 from pathlib import Path
 from typing import Optional, List
 
@@ -41,6 +42,57 @@ FONT_ARIAL = "C:/Windows/Fonts/arial.ttf"
 
 class YouTubeContentGen:
 
+    def _recent_yt_topics(self, limit: int = 20) -> list[str]:
+        try:
+            from memory.store import memory
+            raw = memory.get("soul_yt_topics_made", "[]")
+            entries = json.loads(raw) if raw else []
+            return [str(e.get("topic", "")).strip() for e in entries[-limit:] if e.get("topic")]
+        except Exception:
+            return []
+
+    @staticmethod
+    def _norm_topic(text: str) -> str:
+        t = (text or "").lower()
+        t = re.sub(r"[^a-z0-9\s]", " ", t)
+        t = re.sub(r"\s+", " ", t).strip()
+        return t
+
+    def _is_recently_repeated(self, topic: str, recent_topics: list[str]) -> bool:
+        cur = self._norm_topic(topic)
+        if not cur:
+            return False
+        cur_tokens = set(cur.split())
+        for old in recent_topics:
+            prev = self._norm_topic(old)
+            if not prev:
+                continue
+            if cur == prev or cur in prev or prev in cur:
+                return True
+            prev_tokens = set(prev.split())
+            if not prev_tokens:
+                continue
+            overlap = len(cur_tokens & prev_tokens)
+            if overlap >= 3:
+                return True
+        return False
+
+    def _pick_fresh_topic(self, recent_topics: list[str]) -> Optional[str]:
+        try:
+            from content.trend_scanner import trend_scanner
+            trends = trend_scanner.get_trends(force_refresh=True)
+            candidates = [
+                t.get("topic", "")
+                for t in trends
+                if t.get("topic") and int(t.get("relevance_score", 0)) >= 35
+            ]
+            for cand in candidates[:15]:
+                if not self._is_recently_repeated(cand, recent_topics):
+                    return cand
+        except Exception:
+            pass
+        return None
+
     def generate_video_package(
         self,
         topic: Optional[str] = None,
@@ -51,24 +103,51 @@ class YouTubeContentGen:
         Returns package dict with all assets.
         """
         if not topic:
-            # Soul-guided topic selection: 40% of the time use learned interests
-            soul_topic = None
-            try:
-                from core.soul_engine import soul as _soul
-                interests = _soul.get_content_interests()
-                if interests and random.random() < 0.40:
-                    soul_topic = random.choice(interests[:10])
-                    logger.debug(f"YT Short using soul interest topic: {soul_topic}")
-            except Exception:
-                pass
+            recent_topics = self._recent_yt_topics(limit=20)
 
-            if soul_topic:
+            # 1) Prefer fresh live trends first
+            topic = self._pick_fresh_topic(recent_topics)
+
+            # 2) Soul-guided fallback (only if not repetitive)
+            if not topic:
+                soul_topic = None
+                try:
+                    from core.soul_engine import soul as _soul
+                    interests = _soul.get_content_interests()
+                    shuffled = interests[:]
+                    random.shuffle(shuffled)
+                    for cand in shuffled[:20]:
+                        if not self._is_recently_repeated(cand, recent_topics):
+                            soul_topic = cand
+                            break
+                    if soul_topic:
+                        logger.debug(f"YT Short using soul interest topic: {soul_topic}")
+                except Exception:
+                    pass
                 topic = soul_topic
-            else:
-                picked = ken_ai.pick_content_topic()
+
+            # 3) Final AI planner fallback with avoid-list
+            if not topic:
+                picked = ken_ai.pick_content_topic(avoid_topics=recent_topics[:12])
                 topic = f"{picked.get('topic')}: {picked.get('angle')}"
 
+        try:
+            from core.cross_platform_brain import cross_platform_brain as _brain
+            if topic and _brain.is_topic_recent(topic, lookback=35):
+                picked = ken_ai.pick_content_topic(
+                    avoid_topics=(self._recent_yt_topics(limit=12) + _brain.recent_topics(limit=12))
+                )
+                topic = f"{picked.get('topic')}: {picked.get('angle')}"
+        except Exception:
+            pass
+
         logger.info(f"📹 Generating YouTube Short for: {topic}")
+
+        try:
+            from core.cross_platform_brain import cross_platform_brain as _brain
+            _brain.record_topic("youtube", topic, source="yt_short")
+        except Exception:
+            pass
 
         # Soul learning: record the topic we're making a Short about
         try:

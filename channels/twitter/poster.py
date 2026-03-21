@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -56,6 +57,48 @@ class TwitterPoster:
     def _increment(self) -> None:
         key = f"tweets_today_{datetime.utcnow().date()}"
         memory.set(key, str(self._tweets_today() + 1))
+
+    @staticmethod
+    def _sanitize_outgoing_text(text: str) -> str:
+        """
+        Remove common LLM prompt-leak/meta wrappers before posting.
+        This is a final safety boundary for all outgoing tweets.
+        """
+        t = (text or "").strip().strip('"\'')
+        if not t:
+            return ""
+
+        if t.startswith("```"):
+            t = "\n".join(t.split("\n")[1:]).rstrip("`").strip()
+
+        # Drop common meta-instruction lines or option labels
+        bad_line = re.compile(
+            r"(?i)^("
+            r"reply\s*[:\-]?|"
+            r"best\s*reply.*:|"
+            r"write\s*(your\s*)?reply\s*[:\-]?|"
+            r"original\s*tweet\s*[:\-]?|"
+            r"tweet\s*(idea|option)?\s*\d*\s*[:\-]?|"
+            r"option\s*\d+\s*[:\-]?|"
+            r"caption\s*[:\-]?|"
+            r"here'?s\s*(a|one)\s*(tweet|reply)"
+            r")"
+        )
+        lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
+        kept = [ln for ln in lines if not bad_line.search(ln)]
+        if kept:
+            t = "\n".join(kept)
+
+        # If model gives alternates ("or if you want...") keep only the primary take
+        t = re.split(r"(?i)\bor if you want\b", t)[0]
+        t = re.split(r"(?i)\bif you want (a )?(spicier|safer|alt)\b", t)[0]
+        t = re.split(r"(?i)\balternative\s*[:\-]?", t)[0]
+        t = re.sub(r"[\s\(\[\{\-:;,]+$", "", t)
+
+        # Collapse excessive spacing/newlines
+        t = re.sub(r"\n{3,}", "\n\n", t)
+        t = re.sub(r"[ \t]{2,}", " ", t).strip()
+        return t
 
     # ── Primary: Twitter API v2 ───────────────────────────────────────────────
 
@@ -337,7 +380,16 @@ class TwitterPoster:
         if not self._can_tweet():
             return None
 
+        text = self._sanitize_outgoing_text(text)
+        try:
+            from core.cross_platform_brain import cross_platform_brain as _brain
+            text = _brain.sanitize_social_text(text, max_chars=300)
+        except Exception:
+            pass
         text = clean_for_tweet(truncate(text, 280))
+        if not text:
+            logger.warning("Tweet skipped: text empty after sanitization")
+            return None
         h = fingerprint(text)
         if memory.already_posted(h):
             logger.info(f"Tweet already posted (dedup): {text[:50]}")
@@ -356,6 +408,11 @@ class TwitterPoster:
             memory.mark_posted(h, "twitter", text, "api" if self._api_ready else "browser")
             self._increment()
             memory.queue_notification(f"\U0001f426 tweeted: {text[:120]}")
+            try:
+                from core.cross_platform_brain import cross_platform_brain as _brain
+                _brain.record_topic("twitter", text, source="tweet_posted")
+            except Exception:
+                pass
         else:
             logger.error("Tweet failed via all methods")
 

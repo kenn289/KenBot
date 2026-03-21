@@ -91,7 +91,7 @@ class KenAI:
         self._db.commit()
 
     # ── Style learning ────────────────────────────────────
-    STYLE_LEARN_EVERY = 8  # re-summarise style every N messages from Kenneth
+    STYLE_LEARN_EVERY = 3  # faster adaptation: re-summarise style every N messages from Kenneth
 
     def learn_from_message(self, message: str) -> None:
         """Store a raw message Kenneth typed; rebuild style profile every N calls."""
@@ -107,8 +107,16 @@ class KenAI:
 
         count = int(memory.get("style_learn_count", "0")) + 1
         memory.set("style_learn_count", str(count))
-        if count % self.STYLE_LEARN_EVERY == 0:
+        # Fast bootstrap: build profile early while data is still small.
+        no_style_yet = not bool(memory.get("ken_style_profile", "").strip())
+        should_bootstrap = no_style_yet and len(msgs) >= 3
+        if should_bootstrap or count % self.STYLE_LEARN_EVERY == 0:
             self._update_style_profile(msgs)
+            try:
+                from core.soul_engine import soul as _soul
+                _soul.trigger_fast_distill(reason="style_update")
+            except Exception:
+                pass
 
     def _update_style_profile(self, msgs: list[str]) -> None:
         """Run Haiku to extract Kenneth's texting patterns, save to kv_store."""
@@ -140,7 +148,7 @@ class KenAI:
         return memory.get("ken_style_profile", "")
 
     # ── Convo-context learning (from other people's messages) ─────────────────
-    CONVO_LEARN_EVERY = 15  # re-summarise convo context every N incoming messages
+    CONVO_LEARN_EVERY = 5  # faster adaptation: re-summarise convo context every N incoming messages
 
     def learn_from_convo(self, speaker: str, message: str) -> None:
         """Store an incoming message from someone else; rebuild convo-context every N calls."""
@@ -156,8 +164,16 @@ class KenAI:
 
         count = int(memory.get("convo_learn_count", "0")) + 1
         memory.set("convo_learn_count", str(count))
-        if count % self.CONVO_LEARN_EVERY == 0:
+        # Fast bootstrap: learn social world early to mimic context faster.
+        no_ctx_yet = not bool(memory.get("ken_convo_context", "").strip())
+        should_bootstrap = no_ctx_yet and len(msgs) >= 6
+        if should_bootstrap or count % self.CONVO_LEARN_EVERY == 0:
             self._update_convo_context(msgs)
+            try:
+                from core.soul_engine import soul as _soul
+                _soul.trigger_fast_distill(reason="convo_update")
+            except Exception:
+                pass
 
     def _update_convo_context(self, msgs: list[str]) -> None:
         """Ask Haiku to summarise the topics and vibe of Kenneth's social world."""
@@ -577,12 +593,21 @@ GROUP MODE: {persona_section}
         except Exception:
             pass
 
+        cross_block = ""
+        try:
+            from core.cross_platform_brain import cross_platform_brain as _brain
+            unified = _brain.build_unified_context(topic, platform="twitter")
+            if unified:
+                cross_block = f"\n{unified}\n"
+        except Exception:
+            pass
+
         system = (
             "You are ghostwriting a tweet for a real Gen Z person. "
             "Sound like a human who actually lives this — not a brand, not a bot, not a motivational page. "
             "Raw, casual, unfiltered. Use lowercase, abbreviations, skip punctuation where it feels natural. "
             "Never use hashtags like a press release. If the topic is personal/niche, lean into it hard."
-            f"{style_block}{convo_block}{soul_block}"
+            f"{style_block}{convo_block}{soul_block}{cross_block}"
         )
         prompt = (
             f"Write ONE tweet about: {topic}\n"
@@ -890,6 +915,23 @@ GROUP MODE: {persona_section}
         Generate punchy slide content for a YouTube Short.
         Returns: {hook, slides: [...], cta, vibe}
         """
+        soul_block = ""
+        cross_block = ""
+        try:
+            from core.soul_engine import soul as _soul
+            sctx = _soul.get_soul_context("youtube")
+            if sctx:
+                soul_block = f"\n\nVOICE DNA (match this person):\n{sctx}"
+        except Exception:
+            pass
+        try:
+            from core.cross_platform_brain import cross_platform_brain as _brain
+            cctx = _brain.build_unified_context(topic, platform="youtube")
+            if cctx:
+                cross_block = f"\n\nCROSS-PLATFORM SIGNALS:\n{cctx}"
+        except Exception:
+            pass
+
         system = (
             f"{IDENTITY}\n\n"
             "You make viral YouTube Shorts — shitpost style, hot takes, meme energy. "
@@ -898,6 +940,8 @@ GROUP MODE: {persona_section}
             "Topics rotate across: gaming (Valorant/TenZ), cricket (Kohli/RCB), F1 (Max/Carlos), "
             "AI/tech takes, dev/coding memes, pop culture, desi/Indian life, crack jokes, "
             "trending internet drama, hot takes on anything."
+            + soul_block
+            + cross_block
         )
         prompt = (
             f"Topic: {topic}\n\n"
@@ -945,6 +989,20 @@ GROUP MODE: {persona_section}
         """
         word_count = duration_minutes * 130
         system = self._system_prompt(context="youtube_script")
+        try:
+            from core.soul_engine import soul as _soul
+            sctx = _soul.get_soul_context("youtube")
+            if sctx:
+                system += f"\n\nVOICE DNA (match this person):\n{sctx}"
+        except Exception:
+            pass
+        try:
+            from core.cross_platform_brain import cross_platform_brain as _brain
+            cctx = _brain.build_unified_context(topic, platform="youtube_script")
+            if cctx:
+                system += f"\n\nCROSS-PLATFORM SIGNALS:\n{cctx}"
+        except Exception:
+            pass
         prompt = (
             f"Write a YouTube video script about: {topic}\n"
             f"Target length: ~{word_count} words ({duration_minutes} min spoken)\n"
@@ -1025,17 +1083,41 @@ GROUP MODE: {persona_section}
         )
         return self._call(system, prompt, model=MODEL_HAIKU, max_tokens=150, use_cache=False)
 
-    def pick_content_topic(self) -> dict:
+    def pick_content_topic(self, avoid_topics: Optional[list[str]] = None) -> dict:
         """Let AI pick the best content topic right now based on pillars."""
         from config.ken_personality import CONTENT_PILLARS
         pillars_str = json.dumps(CONTENT_PILLARS, indent=2)
         system = self._system_prompt(context="content_planning")
+        global_recent: list[str] = []
+        unified_block = ""
+        try:
+            from core.cross_platform_brain import cross_platform_brain as _brain
+            global_recent = _brain.recent_topics(limit=12)
+            unified_block = _brain.build_unified_context(platform="planner")
+        except Exception:
+            pass
+        avoid_block = ""
+        if avoid_topics:
+            trimmed = [t[:80] for t in avoid_topics[:12] if t]
+            if trimmed:
+                avoid_block = (
+                    "\nAVOID REPEATING these recently used YouTube topics/angles:\n"
+                    + "\n".join(f"  - {t}" for t in trimmed)
+                    + "\nPick something substantially different.\n"
+                )
+        if global_recent:
+            avoid_block += (
+                "\nAVOID REPEATING these recently posted cross-platform topics:\n"
+                + "\n".join(f"  - {item[:80]}" for item in global_recent)
+                + "\nPrefer a new angle with current context.\n"
+            )
         prompt = (
             f"Given these content pillars:\n{pillars_str}\n\n"
             "Pick ONE topic/angle that would perform well on Twitter and YouTube TODAY.\n"
             "Rotate across ALL pillars — don't always pick gaming. Consider:\n"
-            "  - Valorant scene (ROTATE players, not only TenZ): fns IGL breakdowns, boaster/Karmine hype,\n"
-            "    tarik streaming moments, shanks/yay/nAts/aspas/Derke/Demon1 highlights,\n"
+            "  - Valorant scene (ROTATE players, not only TenZ): current VCT matches/results,\n"
+            "    creator watchparty takes (e.g., tarik/fns), roster/news updates,\n"
+            "    yay/nAts/aspas/Derke/Demon1 highlights,\n"
             "    Sentinels (TenZ/Zekken/Sacy/pANcada), VCT Americas/EMEA/Pacific results, agent meta/patch takes\n"
             "  - AI/tech (AI drama, new model releases, vibe coding, cursor, layoffs)\n"
             "  - Cricket/F1 (Kohli, RCB, Max Verstappen, Carlos Sainz, race results, IPL)\n"
@@ -1044,6 +1126,8 @@ GROUP MODE: {persona_section}
             "  - Pop culture (Netflix, Bollywood, Marvel, DC, movies, music)\n"
             "  - Indian/desi life (startup culture, Bangalore, food delivery, traffic jokes)\n"
             "  - Hot takes / crack jokes (shower thoughts, absurd takes, anything funny)\n"
+            + (f"\n{unified_block}\n" if unified_block else "")
+            + avoid_block +
             "Return ONLY JSON: {\"topic\": \"...\", \"angle\": \"...\", \"platform\": \"both|twitter|youtube\"}"
         )
         raw = self._call(system, prompt, model=MODEL_HAIKU, max_tokens=200, use_cache=False)
@@ -1051,8 +1135,8 @@ GROUP MODE: {persona_section}
             return json.loads(raw)
         except Exception:
             fallbacks = [
-                {"topic": "fns Valorant", "angle": "best IGL callouts in VCT", "platform": "both"},
-                {"topic": "boaster VCT", "angle": "Karmine Corp hype energy", "platform": "twitter"},
+                {"topic": "VCT Americas", "angle": "biggest upset/result from latest matchday", "platform": "both"},
+                {"topic": "Valorant roster moves", "angle": "who upgraded vs who got worse", "platform": "twitter"},
                 {"topic": "TenZ Sentinels", "angle": "clutch highlight of the week", "platform": "both"},
                 {"topic": "aspas LOUD", "angle": "most insane stat line this split", "platform": "twitter"},
             ]

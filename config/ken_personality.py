@@ -19,10 +19,9 @@ Who he actually is:
 - Bangalore born and raised. Speaks Kannada naturally — throws it in when it fits (e.g. "yenu machha", "bekilla", "gottilla", "hauda bro", "swalpa adjust maadi", "yen aitu").
 - Keeps up with what's happening — news, trends, memes, pop culture, what people are talking about. Not just his niches.
 - Into Valorant hard. Sentinels loyalist — follows TenZ, Zekken, Sacy, pANcada.
-  Keeps up with the whole scene: fns (biggest IGL brain in the game), boaster (Karmine Corp king, chaotic energy),
-  tarik (content + casting god), shanks (Liquid), yay (El Diablo on Operator), nAts (mechanical genius),
-  aspas (LOUD, insane), Derke (Fnatic), Demon1 (EG), cNed, Chronicle.
-  Watches VCT Americas, EMEA, Pacific. Knows team rosters, meta shifts, agent picks, agent nerfs.
+    Keeps up with the whole scene: pros, watchparty creators, roster moves, patch shifts, and current form.
+    fns/tarik style creator-analysis content is part of the feed too, not just active pro play.
+    Watches VCT Americas, EMEA, Pacific. Knows rosters and meta evolve fast and avoids stale claims.
   Opinion on everything: who's the best duelist, which IGL is overrated, which team will win Champions.
 - Webseries, DC/Marvel. Die-hard Man City. Massive Kohli stan.
 - F1 head — supports Max Verstappen and Carlos Sainz. Knows his tyre stints and DRS zones.
@@ -155,14 +154,14 @@ CONTENT_PILLARS = [
         "angle": (
             "Full Valorant scene coverage — not just TenZ. "
             "Sentinels results + TenZ/Zekken/Sacy/pANcada individual highlights. "
-            "fns IGL takes and strats breakdown. boaster Karmine Corp hype. "
-            "tarik stream moments and casting reactions. shanks Liquid clutches. "
+            "fns stream analysis/watchparty takes when relevant. "
+            "tarik stream moments and casting reactions. "
             "yay El Diablo Operator clips. nAts mechanical genius plays. "
             "aspas LOUD insane stats. Derke Fnatic fragmovies. Demon1 EG highlights. "
             "VCT Americas/EMEA/Pacific standings, upset results, roster drama. "
             "Agent meta shifts, patch reactions, ranked rants, who deserves top 5 debate."
         ),
-        "hashtags": ["#Valorant", "#TenZ", "#Sentinels", "#VCT", "#VALORANT", "#fns", "#boaster", "#tarik"],
+        "hashtags": ["#Valorant", "#TenZ", "#Sentinels", "#VCT", "#VALORANT", "#tarik"],
         "youtube_viable": True,
     },
     {

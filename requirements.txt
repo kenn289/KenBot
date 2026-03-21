@@ -17,6 +17,7 @@ pytz>=2024.1
 
 # ── Twitter / X ───────────────────────────────────
 tweepy>=4.14.0
+praw>=7.7.1
 
 # ── Google APIs (YouTube, Drive, Sheets) ──────────
 google-api-python-client>=2.130.0
