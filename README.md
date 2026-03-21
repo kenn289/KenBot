@@ -177,9 +177,13 @@ pip install -r requirements.txt
 Install Node dependencies:
 
 ```bash
-cd channels/whatsapp
 npm install
-cd ../..
+```
+
+Install Playwright browser (required for X/Reddit browser automation fallback):
+
+```bash
+python -m playwright install chromium
 ```
 
 ### 2. Create your `.env`
@@ -431,35 +435,38 @@ The bot picks one at random for each Short, mixes it in at 25% volume with a 2-s
 
 ### 7. Run
 
-### 7. Run
+Choose ONE Python mode below (do not run both together):
 
-**Terminal 1 — Flask API:**
+#### Mode A (recommended): all-in-one runner
+
+**Terminal 1 — Python app (Flask + scheduler):**
 
 ```powershell
-# Windows (ALWAYS set PYTHONUTF8 first):
+# Windows
+$env:PYTHONUTF8="1"; .venv\Scripts\python.exe run.py
+```
+
+```bash
+# macOS/Linux
+PYTHONUTF8=1 python run.py
+```
+
+**Terminal 2 — WhatsApp bridge:**
+
+```bash
+npm run whatsapp
+# Scan QR: WhatsApp -> Linked Devices -> Link a Device
+```
+
+#### Mode B (API-only debug mode)
+
+Use this only if you want Flask endpoints without scheduler jobs.
+
+```powershell
 $env:PYTHONUTF8="1"; .venv\Scripts\python.exe api_bridge.py
 ```
 
-```bash
-# macOS/Linux:
-PYTHONUTF8=1 python api_bridge.py
-```
-
-**Terminal 2 — WhatsApp Bot:**
-
-```bash
-cd channels/whatsapp
-node bot.js
-# Scan the QR code with WhatsApp > Linked Devices > Link a Device
-```
-
-**Terminal 3 — Main Bot (scheduler + X engagement + YT):**
-
-```powershell
-.venv\Scripts\python.exe run.py
-```
-
-Verify all three are running:
+Verify services are running:
 ```bash
 curl http://localhost:5050/health
 # Expected: {"bot": "KenBot OS", "status": "ok", ...}
@@ -467,6 +474,52 @@ curl http://localhost:5050/health
 
 > **Windows note:** Always set `PYTHONUTF8=1` before starting Flask. Without it you'll get
 > `SyntaxError: invalid character` on files that use Unicode characters in comments.
+
+---
+
+## New User Onboarding (clone and use for yourself)
+
+If someone clones this repo for their own persona, follow this in order:
+
+1. Create local `.env` from `.env.example` and fill all required fields.
+2. Set your own identity and tone in [config/ken_personality.py](config/ken_personality.py).
+3. Set your own number and real groups in `.env`:
+   - `MY_WHATSAPP_NUMBER`
+   - `KEN_REAL_GROUPS`
+4. Complete first-run auth once:
+   - WhatsApp QR scan (terminal output)
+   - X session/API credentials
+   - YouTube OAuth (`credentials/google_oauth.json`)
+5. Start in Mode A (`run.py` + `npm run whatsapp`).
+6. Verify health:
+
+```bash
+curl http://localhost:5050/health
+curl http://localhost:5050/api/status
+curl http://localhost:5050/api/reddit/status
+```
+
+### Required vs Optional `.env` keys
+
+**Required minimum (core bot):**
+- `ANTHROPIC_API_KEY`
+- `MY_WHATSAPP_NUMBER`
+- `FLASK_PORT`
+- `TIMEZONE`
+
+**Required for X posting:**
+- API mode: `TWITTER_API_KEY`, `TWITTER_API_SECRET`, `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_TOKEN_SECRET`
+- or browser mode: `TWITTER_USERNAME`, `TWITTER_PASSWORD` (plus optional `TWITTER_EMAIL`/`TWITTER_PHONE`)
+
+**Required for Reddit auto:**
+- API mode: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`, `REDDIT_PASSWORD`
+- or browser session mode (login helper/session file)
+
+**Required for YouTube upload:**
+- `GOOGLE_OAUTH_CREDENTIALS` pointing to `credentials/google_oauth.json`
+
+**Optional:**
+- `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, `PEXELS_API_KEY`, `GOOGLE_PLACES_API_KEY`, `NOTION_*`, `TAVILY_API_KEY`
 
 ---
 
@@ -565,7 +618,7 @@ All endpoints run on `http://localhost:5050`.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/reminders/set` | Set a reminder |
+| POST | `/api/reminders/add` | Set a reminder |
 | GET | `/api/reminders/pending` | Get due reminders |
 | GET | `/api/notify/pending` | Poll for pending WhatsApp notifications |
 
@@ -661,7 +714,7 @@ Stop-Process -Id <PID> -Force
 Delete `credentials/twitter_session.json` and re-run the login helper.
 
 **YouTube upload fails -- token expired**
-Delete `credentials/youtube_token.json` and restart Flask -- it will prompt for re-auth.
+Delete `credentials/youtube_token.pickle` and restart Python app -- it will prompt for re-auth.
 
 **ModuleNotFoundError for new modules**
 Make sure you're running from the project root with the venv active:
